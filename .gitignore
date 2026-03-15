@@ -1,2 +1,33 @@
 node_modules
 .DS_Store
+# Write gitignore
+cat > .gitignore << 'EOF'
+# ── Terraform ─────────────────────────────────────────────
+*.tfvars
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+
+# ── Secrets & Keys ────────────────────────────────────────
+*.json
+*.pem
+*.key
+.env
+.env.*
+
+# ── Node.js ───────────────────────────────────────────────
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# ── Mac OS ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── VS Code ───────────────────────────────────────────────
+.vscode/
+EOF
