@@ -1,0 +1,75 @@
+version: "3.8"
+
+services:
+
+  mysql:
+    build:
+      context: ./docker/mysql
+      dockerfile: Dockerfile
+    container_name: theepicbook-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: demo1234
+      MYSQL_DATABASE:      bookstore
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - theepicbook-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping",
+             "-h", "localhost",
+             "-u", "root",
+             "-pdemo1234"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  app:
+    build:
+      context: .
+      dockerfile: ./docker/app/Dockerfile
+    container_name: theepicbook-app
+    restart: unless-stopped
+    environment:
+      PORT:        8080
+      NODE_ENV:    production
+      DB_HOST:     mysql
+      DB_USER:     root
+      DB_PASSWORD: demo1234
+      DB_NAME:     bookstore
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - theepicbook-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose",
+             "--tries=1", "--spider",
+             "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    build:
+      context: ./docker/nginx
+      dockerfile: Dockerfile
+    container_name: theepicbook-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - theepicbook-network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  theepicbook-network:
+    driver: bridge

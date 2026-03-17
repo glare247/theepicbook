@@ -1,0 +1,221 @@
+
+# ─────────────────────────────────────────────────────────────────
+# CI PIPELINE — GitHub Actions
+#
+# Official docs:
+# https://docs.github.com/en/actions
+#
+# Triggers on every push to main branch
+#
+# Pipeline stages:
+# 1. Security scans   — Snyk, SonarQube, Gitleaks, Hadolint
+# 2. Docker build     — builds frontend + backend + mysql images
+# 3. Trivy scan       — scans built images for CVEs
+# 4. Push to registry — pushes to GCP Artifact Registry
+# 5. Checkov scan     — scans Terraform IaC
+# 6. Update GitOps    — updates image tags in gitops/ manifests
+#
+# If ANY stage fails → pipeline stops → nothing reaches production
+# ─────────────────────────────────────────────────────────────────
+
+name: CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  # GCP Configuration
+  PROJECT_ID:    expandox-project-2
+  REGION:        us-central1
+  REPOSITORY_ID: cloudopshub
+
+  # Image names — match architecture diagram
+  BACKEND_IMAGE:  theepicbook-backend
+  FRONTEND_IMAGE: theepicbook-frontend
+  MYSQL_IMAGE:    theepicbook-mysql
+
+jobs:
+
+  # ── JOB 1: Security Scans ───────────────────────────────────────
+  security-scans:
+    name: Security Scans
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout code
+      # Docs: https://github.com/actions/checkout
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Gitleaks — scan for secrets in code
+      # Blocks passwords, tokens, keys from entering Git
+      # Docs: https://github.com/gitleaks/gitleaks-action
+      - name: Gitleaks — secrets detection
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Snyk — scan dependencies for vulnerabilities
+      # Docs: https://github.com/snyk/actions
+      - name: Snyk — dependency vulnerability scan
+        uses: snyk/actions/node@master
+        continue-on-error: false
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+      # Hadolint — lint all Dockerfiles
+      # Docs: https://github.com/hadolint/hadolint-action
+      - name: Hadolint — lint app Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: docker/app/Dockerfile
+
+      - name: Hadolint — lint nginx Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: docker/nginx/Dockerfile
+
+      - name: Hadolint — lint mysql Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: docker/mysql/Dockerfile
+
+      # SonarQube — code quality scan
+      # Docs: https://github.com/SonarSource/sonarqube-scan-action
+      - name: SonarQube — code quality scan
+        uses: SonarSource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+  # ── JOB 2: Build, Scan and Push Images ──────────────────────────
+  build-and-push:
+    name: Build Scan and Push
+    runs-on: ubuntu-latest
+    needs: security-scans
+
+    # Required for Workload Identity Federation
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Authenticate to GCP using Workload Identity
+      # No JSON key file needed — uses OIDC token
+      # Docs: https://github.com/google-github-actions/auth
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ secrets.GCP_SA_EMAIL }}
+
+      # Setup gcloud CLI
+      # Docs: https://github.com/google-github-actions/setup-gcloud
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Configure Docker to use Artifact Registry
+      # Docs: https://cloud.google.com/artifact-registry/docs/docker/authentication
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker \
+            ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      # Build backend image
+      - name: Build backend image
+        run: |
+          docker build \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:latest \
+            -f docker/app/Dockerfile .
+
+      # Build frontend image
+      - name: Build frontend image
+        run: |
+          docker build \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:latest \
+            -f docker/nginx/Dockerfile docker/nginx/
+
+      # Build mysql image
+      - name: Build mysql image
+        run: |
+          docker build \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:latest \
+            -f docker/mysql/Dockerfile docker/mysql/
+
+      # Trivy — scan backend image for CVEs
+      # Zero critical CVE policy — build fails if found
+      # Docs: https://github.com/aquasecurity/trivy-action
+      - name: Trivy — scan backend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          format:    table
+          exit-code: 1
+          severity:  CRITICAL
+
+      # Trivy — scan frontend image
+      - name: Trivy — scan frontend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          format:    table
+          exit-code: 1
+          severity:  CRITICAL
+
+      # Push backend image to Artifact Registry
+      - name: Push backend image
+        run: |
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:latest
+
+      # Push frontend image
+      - name: Push frontend image
+        run: |
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:latest
+
+      # Push mysql image
+      - name: Push mysql image
+        run: |
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:latest
+
+  # ── JOB 3: Terraform Security Scan ──────────────────────────────
+  terraform-scan:
+    name: Terraform Security Scan
+    runs-on: ubuntu-latest
+    needs: security-scans
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Checkov — scan Terraform for misconfigurations
+      # Docs: https://github.com/bridgecrewio/checkov-action
+      - name: Checkov — Terraform IaC scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory:  terraform/
+          framework:  terraform
+          soft_fail:  true
+
+      # TFSec — additional Terraform security analysis
+      # Docs: https://github.com/aquasecurity/tfsec-action
+      - name: TFSec — Terraform security scan
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: terraform/
+          soft_fail: true

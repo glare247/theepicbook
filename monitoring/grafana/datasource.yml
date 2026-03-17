@@ -1,0 +1,30 @@
+
+# ─────────────────────────────────────────────────────────────────
+# Grafana Datasource Configuration
+#
+# Official docs:
+# https://grafana.com/docs/grafana/latest/datasources
+# https://grafana.com/docs/grafana/latest/administration/provisioning
+#
+# Automatically provisions Prometheus as a datasource
+# when Grafana container starts
+# No manual setup needed in Grafana UI
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: 1
+
+datasources:
+
+  # ── Prometheus Datasource ──────────────────────────────────────
+  - name:      Prometheus
+    type:      prometheus
+    access:    proxy
+    url:       http://prometheus:9090
+    isDefault: true
+    editable:  true
+
+    jsonData:
+      # Scrape interval matches prometheus.yml
+      timeInterval: "15s"
+      # Enable exemplars for tracing
+      exemplarTraceIdDestinations: []

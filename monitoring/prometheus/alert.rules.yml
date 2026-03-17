@@ -1,0 +1,134 @@
+
+# ─────────────────────────────────────────────────────────────────
+# Prometheus Alert Rules
+#
+# Official docs:
+# https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules
+#
+# These rules define WHEN to fire alerts
+# Alertmanager decides WHERE to send them (Slack + email)
+# ─────────────────────────────────────────────────────────────────
+
+groups:
+
+  # ── VM Infrastructure Alerts ────────────────────────────────────
+  - name: vm-alerts
+    rules:
+
+      # Alert when VM CPU is over 80% for 5 minutes
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance)
+          (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          environment: dev
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: >
+            CPU usage is {{ $value }}% on {{ $labels.instance }}.
+            Has been above 80% for 5 minutes.
+
+      # Alert when VM memory is over 85%
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes /
+          node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          environment: dev
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: >
+            Memory usage is {{ $value }}% on {{ $labels.instance }}.
+            Has been above 85% for 5 minutes.
+
+      # Alert when disk is over 85%
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} /
+          node_filesystem_size_bytes{mountpoint="/"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          environment: dev
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: >
+            Disk usage is {{ $value }}% on {{ $labels.instance }}.
+
+  # ── Container Alerts ────────────────────────────────────────────
+  - name: container-alerts
+    rules:
+
+      # Alert when any container is down
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name=~"theepicbook.*"})
+        for: 1m
+        labels:
+          severity: critical
+          environment: dev
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: >
+            Container {{ $labels.name }} has been down for 1 minute.
+            Immediate action required.
+
+      # Alert when container restarts too many times
+      - alert: ContainerRestarting
+        expr: rate(container_restart_count{name=~"theepicbook.*"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          environment: dev
+        annotations:
+          summary: "Container {{ $labels.name }} is restarting"
+          description: >
+            Container {{ $labels.name }} has been restarting
+            frequently in the last 15 minutes.
+
+  # ── Application Alerts ───────────────────────────────────────────
+  - name: app-alerts
+    rules:
+
+      # Alert when app is not responding
+      - alert: AppDown
+        expr: up{job="theepicbook-app"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          environment: dev
+        annotations:
+          summary: "TheEpicBook app is down"
+          description: >
+            TheEpicBook application has been unreachable
+            for 2 minutes.
+
+      # Alert when response time is too slow
+      - alert: HighResponseTime
+        expr: http_request_duration_seconds{quantile="0.9"} > 2
+        for: 5m
+        labels:
+          severity: warning
+          environment: dev
+        annotations:
+          summary: "High response time on TheEpicBook"
+          description: >
+            90th percentile response time is {{ $value }}s.
+            Expected under 2 seconds.
+
+  # ── Prometheus Health Alert ──────────────────────────────────────
+  - name: prometheus-alerts
+    rules:
+
+      # Alert if Prometheus cannot scrape a target
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+          environment: dev
+        annotations:
+          summary: "Scrape target down: {{ $labels.job }}"
+          description: >
+            Prometheus cannot scrape {{ $labels.job }}
+            at {{ $labels.instance }}.
