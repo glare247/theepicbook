@@ -53,6 +53,10 @@ resource "google_sql_database_instance" "main" {
       binary_log_enabled = true
       start_time         = "02:00"
 
+      # Transaction log retention must be <= backup retention
+      # Tying them together satisfies the GCP constraint for all environments
+      transaction_log_retention_days = var.backup_retention_days
+
       backup_retention_settings {
         retained_backups = var.backup_retention_days
         retention_unit   = "COUNT"
