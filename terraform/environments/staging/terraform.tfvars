@@ -29,6 +29,13 @@ memory_alert_threshold  = 80.0
 health_check_path = "/health"
 ssl_domains       = []
 
+# ── Cloud SQL ─────────────────────────────────────────────────────
+db_tier                  = "db-g1-small"  # 1 shared vCPU, 1.7 GB — staging
+db_availability_type     = "ZONAL"
+db_disk_size_gb          = 20
+db_deletion_protection   = false
+db_backup_retention_days = 7
+
 # ── Storage ───────────────────────────────────────────────────────
 force_destroy      = true
 versioning_enabled = true

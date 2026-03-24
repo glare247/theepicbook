@@ -29,6 +29,13 @@ memory_alert_threshold  = 75.0
 health_check_path = "/health"
 ssl_domains       = ["cloudopshub.com"]
 
+# ── Cloud SQL ─────────────────────────────────────────────────────
+db_tier                  = "db-n1-standard-2"  # 2 vCPU, 7.5 GB — prod
+db_availability_type     = "REGIONAL"           # HA with automatic failover
+db_disk_size_gb          = 50
+db_deletion_protection   = true                 # protect prod from accidental destroy
+db_backup_retention_days = 30
+
 # ── Storage ───────────────────────────────────────────────────────
 force_destroy      = false        
 versioning_enabled = true

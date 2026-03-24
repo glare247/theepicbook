@@ -64,7 +64,14 @@ resource "google_project_iam_member" "vm_sa_artifact_reader" {
   member  = "serviceAccount:${google_service_account.vm_sa.email}"
 }
 
-# ── 7. IAM — GitHub Actions SA can push to Artifact Registry ─────
+# ── 7. IAM — VM SA can connect to Cloud SQL ──────────────────────
+resource "google_project_iam_member" "vm_sa_cloudsql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.vm_sa.email}"
+}
+
+# ── 8. IAM — GitHub Actions SA can push to Artifact Registry ─────
 resource "google_project_iam_member" "github_actions_sa_artifact_writer" {
   project = var.project_id
   role    = "roles/artifactregistry.writer"

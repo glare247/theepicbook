@@ -52,7 +52,8 @@ resource "google_compute_instance" "app_vm" {
   }
 
   # Startup script runs once when VM boots
-  # Installs docker-compose and creates app directories
+  # Installs docker-compose, creates app directories, and writes
+  # the .env file used by docker-compose for Cloud SQL credentials
   # Docs: https://cloud.google.com/compute/docs/instances/startup-scripts/linux
   metadata = {
     enable-oslogin = "TRUE"
@@ -71,10 +72,36 @@ resource "google_compute_instance" "app_vm" {
       # Create application directories
       mkdir -p /opt/cloudopshub/app
       mkdir -p /opt/cloudopshub/monitoring
-      mkdir -p /opt/cloudopshub/mysql/data
       mkdir -p /opt/cloudopshub/nginx
 
-      echo "=== Startup Complete — Ready for ArgoCD deployment ==="
+      # ── Fetch Cloud SQL credentials from Secret Manager ──────────
+      # Retry up to 5 times — IAM propagation can take ~60 seconds
+      echo "Fetching DB credentials from Secret Manager..."
+      for i in $(seq 1 5); do
+        DB_HOST=$(gcloud secrets versions access latest \
+          --secret="${var.env}-db-host" \
+          --project="${var.project_id}" 2>/dev/null) && break
+        echo "Attempt $${i}: Secret not ready yet, retrying in 15s..."
+        sleep 15
+      done
+
+      DB_PASSWORD=$(gcloud secrets versions access latest \
+        --secret="${var.env}-db-password" \
+        --project="${var.project_id}" 2>/dev/null || echo "")
+
+      # ── Write .env file for docker-compose ──────────────────────
+      # docker-compose reads this via: env_file: /opt/cloudopshub/.env
+      cat > /opt/cloudopshub/.env <<-ENVFILE
+DB_HOST=$${DB_HOST}
+DB_USER=appuser
+DB_PASSWORD=$${DB_PASSWORD}
+DB_NAME=bookstore
+ENVFILE
+
+      # Restrict permissions — only root can read the credentials
+      chmod 600 /opt/cloudopshub/.env
+
+      echo "=== Startup Complete — Environment configured ==="
     EOF
   }
 

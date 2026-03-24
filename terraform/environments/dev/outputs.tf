@@ -67,6 +67,32 @@ output "database_url_secret_id" {
   value       = module.security.database_url_secret_id
 }
 
+# ── Cloud SQL Outputs ─────────────────────────────────────────────
+output "cloudsql_instance_name" {
+  description = "Cloud SQL instance name"
+  value       = module.cloudsql.instance_name
+}
+
+output "cloudsql_private_ip" {
+  description = "Cloud SQL private IP — only reachable from within the VPC"
+  value       = module.cloudsql.private_ip
+}
+
+output "cloudsql_connection_name" {
+  description = "Cloud SQL connection name — format: project:region:instance"
+  value       = module.cloudsql.instance_connection_name
+}
+
+output "db_host_secret_id" {
+  description = "Secret ID for DB_HOST — populated by cloudsql module"
+  value       = module.cloudsql.db_host_secret_id
+}
+
+output "db_password_secret_id" {
+  description = "Secret ID for DB_PASSWORD — populated by cloudsql module"
+  value       = module.cloudsql.db_password_secret_id
+}
+
 # ── SSH Command ───────────────────────────────────────────────────
 output "ssh_command" {
   description = "Exact command to SSH into VM via IAP"

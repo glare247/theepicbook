@@ -26,3 +26,13 @@ output "subnet_cidr" {
   description = "Subnet CIDR range — used by security module"
   value       = google_compute_subnetwork.private.ip_cidr_range
 }
+
+output "vpc_self_link" {
+  description = "VPC self_link — required by Cloud SQL for private IP configuration"
+  value       = google_compute_network.vpc.self_link
+}
+
+output "private_vpc_connection_id" {
+  description = "Private Service Access connection ID — passed to cloudsql module to ensure PSA is ready before Cloud SQL instance creation"
+  value       = google_service_networking_connection.private_vpc_connection.id
+}

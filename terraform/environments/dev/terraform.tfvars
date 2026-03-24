@@ -35,6 +35,13 @@ memory_alert_threshold  = 85.0
 health_check_path = "/health"
 ssl_domains       = []            
 
+# ── Cloud SQL ─────────────────────────────────────────────────────
+db_tier                  = "db-f1-micro"   # smallest/cheapest — 1 shared vCPU, 614 MB
+db_availability_type     = "ZONAL"         # single-zone is fine for dev
+db_disk_size_gb          = 20
+db_deletion_protection   = false           # allow destroy in dev
+db_backup_retention_days = 3              # minimal backups for dev
+
 # ── Storage ───────────────────────────────────────────────────────
 force_destroy      = true        
 versioning_enabled = true

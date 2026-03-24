@@ -14,45 +14,20 @@ version: "3.8"
 
 services:
 
-  # ── MySQL Database ──────────────────────────────────────────────
-  mysql:
-    image: us-central1-docker.pkg.dev/expandox-project-2/cloudopshub/theepicbook-mysql:latest
-    container_name: theepicbook-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: demo1234
-      MYSQL_DATABASE:      bookstore
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - theepicbook-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping",
-             "-h", "localhost",
-             "-u", "root",
-             "-pdemo1234"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
   # ── Node.js Application ─────────────────────────────────────────
+  # DB_HOST, DB_USER, DB_PASSWORD, DB_NAME are loaded from
+  # /opt/cloudopshub/.env — written by the VM startup script
+  # from Cloud SQL private IP and Secret Manager credentials.
+  # Image tag updated by CI pipeline on every push.
   app:
-    # Image tag updated by CI pipeline on every push
-    # CI replaces :latest with the actual commit SHA
     image: us-central1-docker.pkg.dev/expandox-project-2/cloudopshub/theepicbook-backend:latest
     container_name: theepicbook-app
     restart: unless-stopped
+    env_file:
+      - /opt/cloudopshub/.env
     environment:
-      PORT:        8080
-      NODE_ENV:    production
-      DB_HOST:     mysql
-      DB_USER:     root
-      DB_PASSWORD: demo1234
-      DB_NAME:     bookstore
-    depends_on:
-      mysql:
-        condition: service_healthy
+      PORT:     8080
+      NODE_ENV: production
     networks:
       - theepicbook-network
     healthcheck:
@@ -129,8 +104,6 @@ services:
       - theepicbook-network
 
 volumes:
-  mysql_data:
-    driver: local
   prometheus_data:
     driver: local
   grafana_data:

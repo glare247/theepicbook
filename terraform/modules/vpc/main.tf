@@ -132,7 +132,29 @@ resource "google_compute_firewall" "allow_iap_ssh" {
   description   = "Allow SSH only via Google Identity-Aware Proxy"
 }
 
-# ── 8. Firewall — Allow Monitoring Ports Internally ──────────────
+# ── 8. Private Service Access — Required for Cloud SQL private IP ─
+# Allocates an IP range from the VPC that GCP uses for managed services
+# (Cloud SQL lives in Google's internal network and peers with this range)
+# Docs: https://cloud.google.com/vpc/docs/configure-private-services-access
+resource "google_compute_global_address" "private_ip_range" {
+  name          = "${var.env}-sql-private-ip-range"
+  project       = var.project_id
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 16
+  network       = google_compute_network.vpc.id
+  description   = "IP range reserved for Cloud SQL private IP (VPC peering)"
+}
+
+# Creates the peering connection between our VPC and Google's service network
+# Cloud SQL instances with private IP live inside Google's service network
+resource "google_service_networking_connection" "private_vpc_connection" {
+  network                 = google_compute_network.vpc.id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_ip_range.name]
+}
+
+# ── 9. Firewall — Allow Monitoring Ports Internally ──────────────
 # Prometheus, Grafana, Node Exporter, Alertmanager
 # These ports must NEVER be exposed to the internet
 # Docs: https://cloud.google.com/firewall/docs/firewalls

@@ -55,7 +55,34 @@ module "vpc" {
   
 }
 
-# ── MODULE 3: COMPUTE ─────────────────────────────────────────────
+# ── MODULE 3: CLOUD SQL ───────────────────────────────────────────
+# Managed MySQL — replaces the MySQL Docker container
+# Requires VPC module to complete first (Private Service Access peering)
+# Docs: https://cloud.google.com/sql/docs/mysql
+module "cloudsql" {
+  source = "../../modules/cloudsql"
+  env    = var.env
+
+  project_id = var.project_id
+  region     = var.region
+  labels     = local.common_labels
+
+  # ↓ Outputs from vpc module
+  vpc_self_link             = module.vpc.vpc_self_link
+  private_vpc_connection_id = module.vpc.private_vpc_connection_id
+
+  # ── Dev-sized Cloud SQL ────────────────────────────────────────
+  db_tier              = var.db_tier
+  availability_type    = var.db_availability_type
+  disk_size_gb         = var.db_disk_size_gb
+  deletion_protection  = var.db_deletion_protection
+  backup_retention_days = var.db_backup_retention_days
+
+  # PSA must be ready before Cloud SQL instance is created
+  depends_on = [module.vpc]
+}
+
+# ── MODULE 4: COMPUTE ─────────────────────────────────────────────
 # Creates the GCE VM
 # Uses subnet_id from vpc + vm_sa_email from serviceaccounts
 # Docs: https://cloud.google.com/compute/docs/instances
@@ -74,6 +101,9 @@ module "compute" {
 
   # ↓ Output from serviceaccounts module
   vm_sa_email = module.serviceaccounts.vm_sa_email
+
+  # Cloud SQL secrets must exist before VM boots and runs startup script
+  depends_on = [module.cloudsql]
 }
 
 # ── MODULE 4: ARTIFACT REGISTRY ───────────────────────────────────

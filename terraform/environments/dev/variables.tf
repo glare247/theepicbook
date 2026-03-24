@@ -97,6 +97,32 @@ variable "ssl_domains" {
   type        = list(string)
 }
 
+# ── CLOUD SQL ─────────────────────────────────────────────────────
+variable "db_tier" {
+  description = "Cloud SQL machine tier — db-f1-micro for dev"
+  type        = string
+}
+
+variable "db_availability_type" {
+  description = "ZONAL (dev/staging) or REGIONAL (prod)"
+  type        = string
+}
+
+variable "db_disk_size_gb" {
+  description = "Cloud SQL initial disk size in GB"
+  type        = number
+}
+
+variable "db_deletion_protection" {
+  description = "Prevent accidental terraform destroy of Cloud SQL"
+  type        = bool
+}
+
+variable "db_backup_retention_days" {
+  description = "Number of daily backups to retain"
+  type        = number
+}
+
 # ── STORAGE ───────────────────────────────────────────────────────
 variable "force_destroy" {
   description = "Allow non-empty bucket deletion"

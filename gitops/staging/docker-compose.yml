@@ -7,41 +7,15 @@ version: "3.8"
 
 services:
 
-  mysql:
-    image: us-central1-docker.pkg.dev/expandox-project-2/cloudopshub-staging/theepicbook-mysql:latest
-    container_name: theepicbook-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: demo1234
-      MYSQL_DATABASE:      bookstore
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - theepicbook-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping",
-             "-h", "localhost",
-             "-u", "root",
-             "-pdemo1234"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
   app:
     image: us-central1-docker.pkg.dev/expandox-project-2/cloudopshub-staging/theepicbook-backend:latest
     container_name: theepicbook-app
     restart: unless-stopped
+    env_file:
+      - /opt/cloudopshub/.env
     environment:
-      PORT:        8080
-      NODE_ENV:    production
-      DB_HOST:     mysql
-      DB_USER:     root
-      DB_PASSWORD: demo1234
-      DB_NAME:     bookstore
-    depends_on:
-      mysql:
-        condition: service_healthy
+      PORT:     8080
+      NODE_ENV: production
     networks:
       - theepicbook-network
     healthcheck:
@@ -113,8 +87,6 @@ services:
       - theepicbook-network
 
 volumes:
-  mysql_data:
-    driver: local
   prometheus_data:
     driver: local
   grafana_data:
