@@ -49,9 +49,13 @@ jobs:
 
     steps:
       # Checkout code
+      # fetch-depth: 0 gives Gitleaks the full git history so it can diff
+      # the pushed commit range. Shallow clones (depth=1) cause "unknown revision" errors.
       # Docs: https://github.com/actions/checkout
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Gitleaks — scan for secrets in code
       # Blocks passwords, tokens, keys from entering Git
