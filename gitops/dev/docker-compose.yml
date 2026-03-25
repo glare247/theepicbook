@@ -16,7 +16,7 @@ services:
 
   # ── Node.js Application ─────────────────────────────────────────
   # DB_HOST, DB_USER, DB_PASSWORD, DB_NAME are loaded from
-  # /opt/cloudopshub/.env — written by the VM startup script
+  # /mnt/stateful_partition/cloudopshub/.env — written by the VM startup script
   # from Cloud SQL private IP and Secret Manager credentials.
   # Image tag updated by CI pipeline on every push.
   app:
@@ -24,7 +24,7 @@ services:
     container_name: theepicbook-app
     restart: unless-stopped
     env_file:
-      - /opt/cloudopshub/.env
+      - /mnt/stateful_partition/cloudopshub/.env
     environment:
       PORT:     8080
       NODE_ENV: production

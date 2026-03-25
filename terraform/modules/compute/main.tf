@@ -54,7 +54,18 @@ resource "google_compute_instance" "app_vm" {
   # Startup script runs once when VM boots
   # Installs docker-compose, creates app directories, and writes
   # the .env file used by docker-compose for Cloud SQL credentials
+  #
+  # IMPORTANT — COS filesystem layout:
+  # Container-Optimised OS has a READ-ONLY root filesystem.
+  # Only these paths are writable:
+  #   /var                       — general writable area
+  #   /home                      — user home directories
+  #   /tmp                       — ephemeral (lost on reboot)
+  #   /mnt/stateful_partition    — persistent across reboots (preferred)
+  # /usr, /opt, /usr/local/bin are all READ-ONLY on COS.
+  #
   # Docs: https://cloud.google.com/compute/docs/instances/startup-scripts/linux
+  # COS docs: https://cloud.google.com/container-optimized-os/docs/concepts/disks-and-filesystem
   metadata = {
     enable-oslogin = "TRUE"
     startup-script = <<-EOF
@@ -63,16 +74,26 @@ resource "google_compute_instance" "app_vm" {
 
       echo "=== CloudOpsHub VM Startup Script ==="
 
-      # Install docker-compose
-      # Docker is pre-installed on Container-Optimised OS
+      # ── Install docker-compose ───────────────────────────────────
+      # Docker is pre-installed on COS — only Compose is missing.
+      # /usr/local/bin is read-only on COS → install to /var/bin instead
+      mkdir -p /var/bin
       curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
-        -o /usr/local/bin/docker-compose
-      chmod +x /usr/local/bin/docker-compose
+        -o /var/bin/docker-compose
+      chmod +x /var/bin/docker-compose
 
-      # Create application directories
-      mkdir -p /opt/cloudopshub/app
-      mkdir -p /opt/cloudopshub/monitoring
-      mkdir -p /opt/cloudopshub/nginx
+      # Symlink into PATH — /var/bin is writable but may not be in PATH
+      # /usr/local/bin is read-only, so we use /home/chronos (always writable)
+      # Simplest: add /var/bin to PATH for this script
+      export PATH="/var/bin:$PATH"
+
+      # ── Create application directories ───────────────────────────
+      # /mnt/stateful_partition persists across reboots on COS
+      # /opt is read-only on COS → use /mnt/stateful_partition instead
+      # gitops docker-compose files reference /mnt/stateful_partition/cloudopshub/.env
+      mkdir -p /mnt/stateful_partition/cloudopshub
+      mkdir -p /mnt/stateful_partition/cloudopshub/monitoring
+      mkdir -p /mnt/stateful_partition/cloudopshub/nginx
 
       # ── Fetch Cloud SQL credentials from Secret Manager ──────────
       # Retry up to 5 times — IAM propagation can take ~60 seconds
@@ -90,8 +111,8 @@ resource "google_compute_instance" "app_vm" {
         --project="${var.project_id}" 2>/dev/null || echo "")
 
       # ── Write .env file for docker-compose ──────────────────────
-      # docker-compose reads this via: env_file: /opt/cloudopshub/.env
-      cat > /opt/cloudopshub/.env <<-ENVFILE
+      # docker-compose reads this via: env_file: /mnt/stateful_partition/cloudopshub/.env
+      cat > /mnt/stateful_partition/cloudopshub/.env <<-ENVFILE
 DB_HOST=$${DB_HOST}
 DB_USER=appuser
 DB_PASSWORD=$${DB_PASSWORD}
@@ -99,7 +120,7 @@ DB_NAME=bookstore
 ENVFILE
 
       # Restrict permissions — only root can read the credentials
-      chmod 600 /opt/cloudopshub/.env
+      chmod 600 /mnt/stateful_partition/cloudopshub/.env
 
       echo "=== Startup Complete — Environment configured ==="
     EOF

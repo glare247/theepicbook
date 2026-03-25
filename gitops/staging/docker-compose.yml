@@ -12,7 +12,7 @@ services:
     container_name: theepicbook-app
     restart: unless-stopped
     env_file:
-      - /opt/cloudopshub/.env
+      - /mnt/stateful_partition/cloudopshub/.env
     environment:
       PORT:     8080
       NODE_ENV: production
