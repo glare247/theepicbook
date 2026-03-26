@@ -63,6 +63,8 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      - ../../monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ../../monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     networks:
       - theepicbook-network
 

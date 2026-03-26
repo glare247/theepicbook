@@ -1,0 +1,24 @@
+
+# ─────────────────────────────────────────────────────────────────
+# Grafana Dashboard Provisioning
+#
+# Official docs:
+# https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards
+#
+# Grafana auto-loads all .json files from the configured path.
+# No manual import needed — dashboards appear on container start.
+# ─────────────────────────────────────────────────────────────────
+
+apiVersion: 1
+
+providers:
+
+  - name: CloudOpsHub
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      # Path inside the Grafana container
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
