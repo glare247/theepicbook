@@ -180,6 +180,15 @@ jobs:
           exit-code: 1
           severity:  CRITICAL
 
+      # Trivy — scan mysql image
+      - name: Trivy — scan mysql image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:${{ github.sha }}
+          format:    table
+          exit-code: 1
+          severity:  CRITICAL
+
       # Push backend image to Artifact Registry
       - name: Push backend image
         run: |
