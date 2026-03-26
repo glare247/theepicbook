@@ -8,6 +8,9 @@
 
 FROM nginx:alpine
 
+# Upgrade OS packages to patch CVEs in base image (e.g. CVE-2025-15467 OpenSSL)
+RUN apk upgrade --no-cache
+
 # Remove default Nginx config
 RUN rm /etc/nginx/nginx.conf
 
