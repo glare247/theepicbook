@@ -12,11 +12,11 @@
 #    - Runs all Docker containers:
 #      * theepicbook-frontend (Nginx port 80)
 #      * theepicbook-backend  (Node.js port 8080)
-#      * theepicbook-mysql    (MySQL port 3306)
 #      * Prometheus           (port 9090)
 #      * Grafana              (port 3000)
 #      * Node Exporter        (port 9100)
 #      * Alertmanager         (port 9093)
+#    - Database: Cloud SQL (managed MySQL — no container needed)
 # ─────────────────────────────────────────────────────────────────
 
 resource "google_compute_instance" "app_vm" {
@@ -87,13 +87,16 @@ resource "google_compute_instance" "app_vm" {
       # Simplest: add /var/bin to PATH for this script
       export PATH="/var/bin:$PATH"
 
-      # ── Create application directories ───────────────────────────
+      # ── Clone or update application repo ─────────────────────────
       # /mnt/stateful_partition persists across reboots on COS
       # /opt is read-only on COS → use /mnt/stateful_partition instead
-      # gitops docker-compose files reference /mnt/stateful_partition/cloudopshub/.env
-      mkdir -p /mnt/stateful_partition/cloudopshub
-      mkdir -p /mnt/stateful_partition/cloudopshub/monitoring
-      mkdir -p /mnt/stateful_partition/cloudopshub/nginx
+      # Clone on first boot; skip if already present (e.g. VM restart)
+      REPO=/mnt/stateful_partition/cloudopshub
+      if [ ! -d "$REPO/.git" ]; then
+        git clone https://github.com/glare247/theepicbook.git "$REPO"
+      else
+        git -C "$REPO" pull origin main
+      fi
 
       # ── Fetch Cloud SQL credentials from Secret Manager ──────────
       # Retry up to 5 times — IAM propagation can take ~60 seconds

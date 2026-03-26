@@ -125,20 +125,27 @@ jobs:
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
 
-      # SSH into VM via IAP and trigger ArgoCD sync
+      # SSH into VM via IAP and deploy via docker-compose
       # VM has no public IP — access only via Cloud IAP
+      # COS filesystem: /mnt/stateful_partition persists across reboots
+      # docker-compose installed to /var/bin by startup script
       # Docs: https://cloud.google.com/iap/docs/using-tcp-forwarding
-      - name: Trigger ArgoCD sync via IAP SSH
+      - name: Deploy via IAP SSH
         run: |
           gcloud compute ssh ${{ env.VM_NAME }} \
             --zone=${{ env.VM_ZONE }} \
             --project=${{ env.PROJECT_ID }} \
             --tunnel-through-iap \
             --command="
-              cd /opt/cloudopshub && \
-              git pull origin main && \
-              docker-compose -f gitops/dev/docker-compose.yml pull && \
-              docker-compose -f gitops/dev/docker-compose.yml up -d && \
+              export PATH=/var/bin:\$PATH && \
+              REPO=/mnt/stateful_partition/cloudopshub && \
+              if [ ! -d \$REPO/.git ]; then \
+                git clone https://github.com/glare247/theepicbook.git \$REPO; \
+              else \
+                git -C \$REPO pull origin main; \
+              fi && \
+              docker-compose -f \$REPO/gitops/dev/docker-compose.yml pull && \
+              docker-compose -f \$REPO/gitops/dev/docker-compose.yml up -d && \
               echo 'Deployment complete'
             "
 
@@ -150,7 +157,8 @@ jobs:
             --project=${{ env.PROJECT_ID }} \
             --tunnel-through-iap \
             --command="
+              export PATH=/var/bin:\$PATH && \
               docker-compose \
-                -f /opt/cloudopshub/gitops/dev/docker-compose.yml \
+                -f /mnt/stateful_partition/cloudopshub/gitops/dev/docker-compose.yml \
                 ps
             "
