@@ -113,13 +113,45 @@ resource "google_compute_instance" "app_vm" {
         --secret="${var.env}-db-password" \
         --project="${var.project_id}" 2>/dev/null || echo "")
 
+      # ── Fetch alerting credentials from Secret Manager ───────────
+      SLACK_WEBHOOK_URL=$(gcloud secrets versions access latest \
+        --secret="${var.env}-slack-webhook-url" \
+        --project="${var.project_id}" 2>/dev/null || echo "")
+
+      ALERTMANAGER_EMAIL_TO=$(gcloud secrets versions access latest \
+        --secret="${var.env}-alert-email-to" \
+        --project="${var.project_id}" 2>/dev/null || echo "")
+
+      ALERTMANAGER_EMAIL_FROM=$(gcloud secrets versions access latest \
+        --secret="${var.env}-alert-email-from" \
+        --project="${var.project_id}" 2>/dev/null || echo "alerts@cloudopshub.com")
+
+      ALERTMANAGER_SMTP_HOST=$(gcloud secrets versions access latest \
+        --secret="${var.env}-alert-smtp-host" \
+        --project="${var.project_id}" 2>/dev/null || echo "smtp.gmail.com:587")
+
+      ALERTMANAGER_SMTP_USER=$(gcloud secrets versions access latest \
+        --secret="${var.env}-alert-smtp-user" \
+        --project="${var.project_id}" 2>/dev/null || echo "")
+
+      ALERTMANAGER_SMTP_PASS=$(gcloud secrets versions access latest \
+        --secret="${var.env}-alert-smtp-pass" \
+        --project="${var.project_id}" 2>/dev/null || echo "")
+
       # ── Write .env file for docker-compose ──────────────────────
       # docker-compose reads this via: env_file: /mnt/stateful_partition/cloudopshub/.env
+      # Contains DB credentials + alerting credentials
       cat > /mnt/stateful_partition/cloudopshub/.env <<-ENVFILE
 DB_HOST=$${DB_HOST}
 DB_USER=appuser
 DB_PASSWORD=$${DB_PASSWORD}
 DB_NAME=bookstore
+SLACK_WEBHOOK_URL=$${SLACK_WEBHOOK_URL}
+ALERTMANAGER_EMAIL_TO=$${ALERTMANAGER_EMAIL_TO}
+ALERTMANAGER_EMAIL_FROM=$${ALERTMANAGER_EMAIL_FROM}
+ALERTMANAGER_SMTP_HOST=$${ALERTMANAGER_SMTP_HOST}
+ALERTMANAGER_SMTP_USER=$${ALERTMANAGER_SMTP_USER}
+ALERTMANAGER_SMTP_PASS=$${ALERTMANAGER_SMTP_PASS}
 ENVFILE
 
       # Restrict permissions — only root can read the credentials

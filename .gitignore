@@ -1,33 +1,29 @@
-node_modules
-.DS_Store
-# Write gitignore
-cat > .gitignore << 'EOF'
-# ── Terraform ─────────────────────────────────────────────
-*.tfvars
+# ── Terraform ─────────────────────────────────────────────────────
 *.tfstate
 *.tfstate.backup
+errored.tfstate
 .terraform/
-.terraform.lock.hcl
 crash.log
 override.tf
 override.tf.json
 
-# ── Secrets & Keys ────────────────────────────────────────
-*.json
+# ── Secrets & Keys ────────────────────────────────────────────────
 *.pem
 *.key
 .env
 .env.*
 
-# ── Node.js ───────────────────────────────────────────────
+# ── Node.js ───────────────────────────────────────────────────────
 node_modules/
 npm-debug.log
 yarn-error.log
 
-# ── Mac OS ────────────────────────────────────────────────
+# ── Mac OS ────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# ── VS Code ───────────────────────────────────────────────
+# ── VS Code ───────────────────────────────────────────────────────
 .vscode/
-EOF
+
+# ── Claude Code ───────────────────────────────────────────────────
+CLAUDE.md

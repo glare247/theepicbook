@@ -92,12 +92,16 @@ services:
       - theepicbook-network
 
   # ── Alertmanager ────────────────────────────────────────────────
+  # Credentials injected from VM .env file (written by startup script
+  # from GCP Secret Manager). alertmanager.yml uses $VAR substitution.
   alertmanager:
     image: prom/alertmanager:latest
     container_name: theepicbook-alertmanager
     restart: unless-stopped
     ports:
       - "9093:9093"
+    env_file:
+      - /mnt/stateful_partition/cloudopshub/.env
     volumes:
       - ../../monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
     networks:
