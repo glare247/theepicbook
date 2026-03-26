@@ -1,0 +1,33 @@
+
+# ─────────────────────────────────────────────────────────────────
+# Portainer CE — GitOps Bootstrap Compose (Staging)
+#
+# Official docs:
+# https://docs.portainer.io/start/install-ce/server/docker/linux
+#
+# Identical purpose to gitops/dev/portainer.yml — kept separate
+# per environment so each VM bootstraps its own Portainer instance.
+#
+# Portainer polls gitops/staging/docker-compose.yml from Git
+# every 60s and auto-redeploys when image tags change.
+# ─────────────────────────────────────────────────────────────────
+
+version: "3.8"
+
+services:
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: theepicbook-portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/stateful_partition/portainer_data:/data
+    networks:
+      - portainer-network
+
+networks:
+  portainer-network:
+    driver: bridge
