@@ -8,17 +8,13 @@
 
 FROM nginx:alpine
 
-# Upgrade OS packages to patch CVEs in base image (e.g. CVE-2025-15467 OpenSSL)
-RUN apk upgrade --no-cache
-
-# Remove default Nginx config
-RUN rm /etc/nginx/nginx.conf
+# Upgrade OS packages, remove default config, create static assets dir
+RUN apk upgrade --no-cache && \
+    rm /etc/nginx/nginx.conf && \
+    mkdir -p /app/public/assets
 
 # Copy our custom Nginx config
 COPY nginx.conf /etc/nginx/nginx.conf
-
-# Create directory for static files
-RUN mkdir -p /app/public/assets
 
 # Expose port 80
 EXPOSE 80
