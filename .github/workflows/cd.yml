@@ -39,7 +39,6 @@ env:
   # Image names
   BACKEND_IMAGE:  theepicbook-backend
   FRONTEND_IMAGE: theepicbook-frontend
-  MYSQL_IMAGE:    theepicbook-mysql
 
 jobs:
 
@@ -90,9 +89,6 @@ jobs:
           sed -i "s|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:.*|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:${{ steps.sha.outputs.sha }}|g" \
             gitops/dev/docker-compose.yml
 
-          # Update mysql image tag
-          sed -i "s|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:.*|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:${{ steps.sha.outputs.sha }}|g" \
-            gitops/dev/docker-compose.yml
 
       # Commit and push updated manifest
       - name: Commit and push updated manifests

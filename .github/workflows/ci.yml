@@ -38,7 +38,6 @@ env:
   # Image names — match architecture diagram
   BACKEND_IMAGE:  theepicbook-backend
   FRONTEND_IMAGE: theepicbook-frontend
-  MYSQL_IMAGE:    theepicbook-mysql
 
 jobs:
 
@@ -152,14 +151,6 @@ jobs:
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:latest \
             -f docker/nginx/Dockerfile docker/nginx/
 
-      # Build mysql image
-      - name: Build mysql image
-        run: |
-          docker build \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:latest \
-            -f docker/mysql/Dockerfile docker/mysql/
-
       # Trivy — scan backend image for CVEs
       # Zero critical CVE policy — build fails if found
       # Docs: https://github.com/aquasecurity/trivy-action
@@ -180,15 +171,6 @@ jobs:
           exit-code: 1
           severity:  CRITICAL
 
-      # Trivy — scan mysql image
-      - name: Trivy — scan mysql image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:${{ github.sha }}
-          format:    table
-          exit-code: 1
-          severity:  CRITICAL
-
       # Push backend image to Artifact Registry
       - name: Push backend image
         run: |
@@ -201,11 +183,6 @@ jobs:
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:latest
 
-      # Push mysql image
-      - name: Push mysql image
-        run: |
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:${{ github.sha }}
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.MYSQL_IMAGE }}:latest
 
   # ── JOB 3: Terraform Security Scan ──────────────────────────────
   terraform-scan:
