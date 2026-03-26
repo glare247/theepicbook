@@ -2,9 +2,8 @@
 # SECURITY MODULE — OUTPUTS
 #
 # These values are passed to other modules:
-# waf_policy_id   → loadbalancer module (attached to backend service)
-# waf_policy_name → loadbalancer module
-# secret IDs      → application config + GitHub Actions secrets
+# waf_policy_id → loadbalancer module (attached to backend service)
+# secret IDs    → referenced in startup scripts and CD pipeline
 # ─────────────────────────────────────────────────────────────────
 
 output "waf_policy_id" {
@@ -18,21 +17,16 @@ output "waf_policy_name" {
 }
 
 output "database_url_secret_id" {
-  description = "Secret Manager secret ID for DATABASE_URL"
+  description = "Secret Manager secret ID for database URL"
   value       = google_secret_manager_secret.database_url.secret_id
 }
 
-output "argocd_auth_token_secret_id" {
-  description = "Secret Manager secret ID for ARGOCD_AUTH_TOKEN"
-  value       = google_secret_manager_secret.argocd_auth_token.secret_id
+output "portainer_admin_password_secret_id" {
+  description = "Secret Manager secret ID for Portainer admin password"
+  value       = google_secret_manager_secret.portainer_admin_password.secret_id
 }
 
-output "grafana_admin_password_secret_id" {
-  description = "Secret Manager secret ID for GRAFANA_ADMIN_PASSWORD"
-  value       = google_secret_manager_secret.grafana_admin_password.secret_id
-}
-
-output "snyk_token_secret_id" {
-  description = "Secret Manager secret ID for SNYK_TOKEN"
-  value       = google_secret_manager_secret.snyk_token.secret_id
+output "slack_webhook_url_secret_id" {
+  description = "Secret Manager secret ID for Slack webhook URL"
+  value       = google_secret_manager_secret.slack_webhook_url.secret_id
 }
