@@ -21,6 +21,9 @@
 # ── Stage 1: Builder ──────────────────────────────────────────────
 FROM node:18-alpine AS builder
 
+# Upgrade OS packages to patch CVEs in base image (e.g. CVE-2025-15467 OpenSSL)
+RUN apk upgrade --no-cache
+
 WORKDIR /app
 
 # Copy package files first
@@ -36,6 +39,9 @@ COPY . .
 
 # ── Stage 2: Production ───────────────────────────────────────────
 FROM node:18-alpine
+
+# Upgrade OS packages to patch CVEs in base image (e.g. CVE-2025-15467 OpenSSL)
+RUN apk upgrade --no-cache
 
 # Create non-root user — containers must never run as root
 RUN addgroup -S appgroup && \
