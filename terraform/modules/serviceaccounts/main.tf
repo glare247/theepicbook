@@ -78,6 +78,26 @@ resource "google_project_iam_member" "github_actions_sa_artifact_writer" {
   member  = "serviceAccount:${google_service_account.github_actions_sa.email}"
 }
 
+# ── 9. IAM — GitHub Actions SA can SSH into VM via Cloud IAP ─────
+# Required for CD pipeline: gcloud compute ssh --tunnel-through-iap
+# Without this, IAP rejects the tunnel connection with 403
+# Docs: https://cloud.google.com/iap/docs/using-tcp-forwarding
+resource "google_project_iam_member" "github_actions_sa_iap_tunnel" {
+  project = var.project_id
+  role    = "roles/iap.tunnelResourceAccessor"
+  member  = "serviceAccount:${google_service_account.github_actions_sa.email}"
+}
+
+# ── 10. IAM — GitHub Actions SA can use OS Login on the VM ───────
+# OS Login links GCP IAM identity to the Linux user on the VM
+# Required alongside IAP tunnel role for SSH to actually work
+# Docs: https://cloud.google.com/compute/docs/oslogin
+resource "google_project_iam_member" "github_actions_sa_os_login" {
+  project = var.project_id
+  role    = "roles/compute.osLogin"
+  member  = "serviceAccount:${google_service_account.github_actions_sa.email}"
+}
+
 # ── 8. Workload Identity Pool ─────────────────────────────────────
 # random_id suffix makes name unique every time
 # Example: dev-github-pool-a3f2b1c4

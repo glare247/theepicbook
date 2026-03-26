@@ -120,10 +120,11 @@ resource "google_secret_manager_secret" "database_url" {
   labels = var.labels
 }
 
-# ── 3. Secret Manager — ARGOCD_AUTH_TOKEN ────────────────────────
-# ArgoCD API token for CD pipeline
-resource "google_secret_manager_secret" "argocd_auth_token" {
-  secret_id = "${var.env}-argocd-auth-token"
+# ── 3. Secret Manager — Portainer admin password ─────────────────
+# Used by CD pipeline to bootstrap Portainer and call its API
+# Docs: https://docs.portainer.io/api/docs
+resource "google_secret_manager_secret" "portainer_admin_password" {
+  secret_id = "${var.env}-portainer-admin-password"
   project   = var.project_id
 
   replication {
@@ -133,10 +134,10 @@ resource "google_secret_manager_secret" "argocd_auth_token" {
   labels = var.labels
 }
 
-# ── 4. Secret Manager — GRAFANA_ADMIN_PASSWORD ───────────────────
-# Grafana dashboard admin password
-resource "google_secret_manager_secret" "grafana_admin_password" {
-  secret_id = "${var.env}-grafana-admin-password"
+# ── 4. Secret Manager — DB credentials ───────────────────────────
+# Written by Cloud SQL module; read by VM startup script
+resource "google_secret_manager_secret" "db_host" {
+  secret_id = "${var.env}-db-host"
   project   = var.project_id
 
   replication {
@@ -146,10 +147,76 @@ resource "google_secret_manager_secret" "grafana_admin_password" {
   labels = var.labels
 }
 
-# ── 5. Secret Manager — SNYK_TOKEN ───────────────────────────────
-# Snyk API token for CI security scans
-resource "google_secret_manager_secret" "snyk_token" {
-  secret_id = "${var.env}-snyk-token"
+resource "google_secret_manager_secret" "db_password" {
+  secret_id = "${var.env}-db-password"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+
+  labels = var.labels
+}
+
+# ── 5. Secret Manager — Alerting credentials ─────────────────────
+# Read by VM startup script, written to .env, used by Alertmanager
+resource "google_secret_manager_secret" "slack_webhook_url" {
+  secret_id = "${var.env}-slack-webhook-url"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+
+  labels = var.labels
+}
+
+resource "google_secret_manager_secret" "alert_email_to" {
+  secret_id = "${var.env}-alert-email-to"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+
+  labels = var.labels
+}
+
+resource "google_secret_manager_secret" "alert_email_from" {
+  secret_id = "${var.env}-alert-email-from"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+
+  labels = var.labels
+}
+
+resource "google_secret_manager_secret" "alert_smtp_host" {
+  secret_id = "${var.env}-alert-smtp-host"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+
+  labels = var.labels
+}
+
+resource "google_secret_manager_secret" "alert_smtp_user" {
+  secret_id = "${var.env}-alert-smtp-user"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+
+  labels = var.labels
+}
+
+resource "google_secret_manager_secret" "alert_smtp_pass" {
+  secret_id = "${var.env}-alert-smtp-pass"
   project   = var.project_id
 
   replication {

@@ -2,9 +2,13 @@
 # ─────────────────────────────────────────────────────────────────
 # GitOps — Dev Environment Docker Compose
 #
-# ArgoCD watches this file and deploys it to the dev GCE VM
-# Images are pulled from GCP Artifact Registry
-# VM service account authenticates automatically — no keys needed
+# Portainer watches this file via Git and redeploys on change.
+# Images are pulled from GCP Artifact Registry.
+# VM service account authenticates automatically — no keys needed.
+#
+# Cloud Logging: containers use the gcplogs log driver.
+# Logs appear in GCP Cloud Logging under the container name.
+# VM SA has roles/logging.logWriter — no extra auth needed.
 #
 # Image URL format:
 # us-central1-docker.pkg.dev/expandox-project-2/cloudopshub/image:tag
@@ -28,6 +32,13 @@ services:
     environment:
       PORT:     8080
       NODE_ENV: production
+    logging:
+      driver: gcplogs
+      options:
+        gcp-log-cmd: "true"
+        labels: "container_name,environment"
+        env: "NODE_ENV"
+        tag: "theepicbook-app"
     networks:
       - theepicbook-network
     healthcheck:
@@ -44,6 +55,11 @@ services:
     image: us-central1-docker.pkg.dev/expandox-project-2/cloudopshub/theepicbook-frontend:c4784d3a44c0292078f4b8f4bc3d3ebab27330ee
     container_name: theepicbook-nginx
     restart: unless-stopped
+    logging:
+      driver: gcplogs
+      options:
+        gcp-log-cmd: "true"
+        tag: "theepicbook-nginx"
     ports:
       - "80:80"
     depends_on:
