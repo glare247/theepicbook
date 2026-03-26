@@ -1,6 +1,6 @@
 
 # ─────────────────────────────────────────────────────────────────
-# MySQL 8.0 Dockerfile
+# MySQL 8.4 Dockerfile
 #
 # Official docs:
 # https://hub.docker.com/_/mysql
@@ -9,7 +9,7 @@
 # placed in /docker-entrypoint-initdb.d/ on first startup
 # ─────────────────────────────────────────────────────────────────
 
-FROM mysql:8.0
+FROM mysql:8.4
 
 # Copy init SQL — runs automatically on first container start
 # Creates database, tables and seeds data
