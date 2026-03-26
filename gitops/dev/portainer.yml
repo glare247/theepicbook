@@ -1,0 +1,55 @@
+
+# ─────────────────────────────────────────────────────────────────
+# Portainer CE — GitOps Bootstrap Compose
+#
+# Official docs:
+# https://docs.portainer.io/start/install-ce/server/docker/linux
+#
+# This file is ONLY used to bootstrap Portainer itself.
+# Portainer then manages the app stack (docker-compose.yml) via Git.
+#
+# Why a separate file?
+# A GitOps tool cannot manage the compose file that defines itself —
+# that would be a circular dependency (it would restart itself
+# every time it detects a change, causing a loop).
+#
+# Portainer polls gitops/dev/docker-compose.yml from Git every 60s.
+# When the CI pipeline updates image tags → Portainer detects the
+# change → pulls new images → redeploys the app stack automatically.
+#
+# Bootstrap flow (run once):
+# 1. CD pipeline SSHes into VM via Cloud IAP
+# 2. Runs: docker-compose -f portainer.yml up -d
+# 3. Portainer starts on port 9000 (internal only)
+# 4. CD pipeline calls Portainer API to configure Git stack
+# 5. Portainer takes over — no more SSH needed for deploys
+# ─────────────────────────────────────────────────────────────────
+
+version: "3.8"
+
+services:
+
+  # ── Portainer CE ─────────────────────────────────────────────────
+  # Runs as a privileged container — needs access to Docker socket
+  # to manage other containers on the same host.
+  # /var/run/docker.sock mount gives Portainer control of Docker.
+  # Port 9000 is internal only — not exposed externally.
+  # Docs: https://docs.portainer.io/start/install-ce/server/docker/linux
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: theepicbook-portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      # Docker socket — required for Portainer to manage containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persistent storage for Portainer config (stacks, users, settings)
+      # /mnt/stateful_partition persists across VM reboots on COS
+      - /mnt/stateful_partition/portainer_data:/data
+    networks:
+      - portainer-network
+
+networks:
+  portainer-network:
+    driver: bridge
