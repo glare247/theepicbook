@@ -179,18 +179,18 @@ jobs:
               ALERTMANAGER_SMTP_USER=\$(fetch_secret \"\${ENV}-alert-smtp-user\" || echo '')
               ALERTMANAGER_SMTP_PASS=\$(fetch_secret \"\${ENV}-alert-smtp-pass\" || echo '')
 
-              cat > \$REPO/.env <<ENVEOF
-DB_HOST=\${DB_HOST}
-DB_USER=appuser
-DB_PASSWORD=\${DB_PASSWORD}
-DB_NAME=bookstore
-SLACK_WEBHOOK_URL=\${SLACK_WEBHOOK_URL}
-ALERTMANAGER_EMAIL_TO=\${ALERTMANAGER_EMAIL_TO}
-ALERTMANAGER_EMAIL_FROM=\${ALERTMANAGER_EMAIL_FROM}
-ALERTMANAGER_SMTP_HOST=\${ALERTMANAGER_SMTP_HOST}
-ALERTMANAGER_SMTP_USER=\${ALERTMANAGER_SMTP_USER}
-ALERTMANAGER_SMTP_PASS=\${ALERTMANAGER_SMTP_PASS}
-ENVEOF
+              {
+                echo "DB_HOST=\${DB_HOST}"
+                echo "DB_USER=appuser"
+                echo "DB_PASSWORD=\${DB_PASSWORD}"
+                echo "DB_NAME=bookstore"
+                echo "SLACK_WEBHOOK_URL=\${SLACK_WEBHOOK_URL}"
+                echo "ALERTMANAGER_EMAIL_TO=\${ALERTMANAGER_EMAIL_TO}"
+                echo "ALERTMANAGER_EMAIL_FROM=\${ALERTMANAGER_EMAIL_FROM}"
+                echo "ALERTMANAGER_SMTP_HOST=\${ALERTMANAGER_SMTP_HOST}"
+                echo "ALERTMANAGER_SMTP_USER=\${ALERTMANAGER_SMTP_USER}"
+                echo "ALERTMANAGER_SMTP_PASS=\${ALERTMANAGER_SMTP_PASS}"
+              } > \$REPO/.env
               chmod 600 \$REPO/.env
 
               echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
