@@ -155,7 +155,7 @@ jobs:
               /usr/share/google/dockercfg_update.sh
 
               echo '=== Step 3: Pull new images ==='
-              docker run --rm \
+              sudo docker run --rm \
                 -v /var/run/docker.sock:/var/run/docker.sock \
                 -v \$REPO:\$REPO \
                 -w \$REPO \
@@ -163,7 +163,7 @@ jobs:
                 -f \$REPO/gitops/dev/docker-compose.yml pull
 
               echo '=== Step 4: Restart containers ==='
-              docker run --rm \
+              sudo docker run --rm \
                 -v /var/run/docker.sock:/var/run/docker.sock \
                 -v \$REPO:\$REPO \
                 -w \$REPO \
