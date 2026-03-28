@@ -138,7 +138,7 @@ jobs:
             --tunnel-through-iap \
             --command="
               set -e
-              export PATH=/var/bin:\$PATH
+              export PATH=/var/bin:/usr/bin:/bin:\$PATH
               REPO=/mnt/stateful_partition/cloudopshub
 
               echo '=== Step 1: Clone or pull latest code ==='
