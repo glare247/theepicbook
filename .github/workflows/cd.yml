@@ -142,10 +142,11 @@ jobs:
               REPO=/mnt/stateful_partition/cloudopshub
 
               echo '=== Step 1: Clone or pull latest code ==='
+              sudo mkdir -p \$REPO
+              sudo chown -R \$(whoami):\$(whoami) \$REPO
               if [ -d \$REPO/.git ]; then
                 git -C \$REPO pull origin main
               else
-                sudo rm -rf \$REPO
                 git clone https://github.com/glare247/theepicbook.git \$REPO
               fi
 
