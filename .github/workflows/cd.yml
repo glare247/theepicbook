@@ -333,8 +333,8 @@ jobs:
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-          service_account:            ${{ secrets.GCP_SA_EMAIL }}
+          workload_identity_provider: ${{ secrets.STAGING_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ secrets.STAGING_GCP_SA_EMAIL }}
 
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
@@ -351,7 +351,7 @@ jobs:
               DOCKER_CONFIG=/mnt/stateful_partition/.docker
               PROJECT=${{ env.PROJECT_ID }}
               ENV=staging
-              SHA=${{ github.event.inputs.image_tag || 'latest' }}
+              SHA=${{ github.event.workflow_run.head_sha || github.event.inputs.image_tag || github.sha }}
 
               echo '=== Step 1: Clone or pull latest code ==='
               sudo mkdir -p \$REPO
@@ -544,8 +544,8 @@ jobs:
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-          service_account:            ${{ secrets.GCP_SA_EMAIL }}
+          workload_identity_provider: ${{ secrets.PROD_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ secrets.PROD_GCP_SA_EMAIL }}
 
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
@@ -562,7 +562,7 @@ jobs:
               DOCKER_CONFIG=/mnt/stateful_partition/.docker
               PROJECT=${{ env.PROJECT_ID }}
               ENV=prod
-              SHA=${{ github.event.inputs.image_tag || 'latest' }}
+              SHA=${{ github.event.workflow_run.head_sha || github.event.inputs.image_tag || github.sha }}
 
               echo '=== Step 1: Clone or pull latest code ==='
               sudo mkdir -p \$REPO
