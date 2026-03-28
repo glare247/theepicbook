@@ -190,8 +190,8 @@ jobs:
               echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
               AR_TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' \
                 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-                | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
-              echo "\$AR_TOKEN" | sudo docker login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
+                | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
+              echo \$AR_TOKEN | sudo docker login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
 
               echo '=== Step 3: Pull new images ==='
               sudo docker run --rm \
