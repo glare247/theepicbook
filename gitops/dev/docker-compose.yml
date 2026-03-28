@@ -2,7 +2,10 @@
 # ─────────────────────────────────────────────────────────────────
 # GitOps — Dev Environment Docker Compose
 #
-# Portainer watches this file via Git and redeploys on change.
+# CD pipeline updates image tags here on every deploy.
+# GitHub Actions SSHes into the VM, runs git pull, then
+# docker-compose pull && docker-compose up -d.
+#
 # Images are pulled from GCP Artifact Registry.
 # VM service account authenticates automatically — no keys needed.
 #

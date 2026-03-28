@@ -4,24 +4,17 @@
 #
 # Official docs:
 # https://docs.github.com/en/actions
-# https://docs.portainer.io/api/docs
 #
 # Triggers after CI pipeline completes successfully
 #
 # Pipeline stages:
-# 1. Check CI       — only proceed if CI passed
-# 2. Update GitOps  — update image tags in gitops/ manifests
-# 3. Commit + Push  — push updated manifests to repo
-# 4. Bootstrap      — ensure Portainer is running on the VM
-# 5. GitOps Sync    — Portainer polls Git and redeploys automatically
+# 1. Check CI      — only proceed if CI passed
+# 2. Update GitOps — update image tags in gitops/dev/docker-compose.yml
+# 3. Deploy        — SSH into GCP VM via Cloud IAP and restart containers
 #
-# GitOps flow:
+# Deployment flow:
 # CI pushes images → CD updates gitops/dev/docker-compose.yml
-# → Portainer polls Git every 60s → detects change
-# → pulls new images → redeploys app stack
-#
-# After first bootstrap, SSH is only needed to start Portainer.
-# Portainer handles all subsequent deployments automatically.
+# → SSH into VM → git pull → docker-compose pull → docker-compose up -d
 # ─────────────────────────────────────────────────────────────────
 
 name: CD Pipeline
@@ -45,10 +38,6 @@ env:
   # Image names
   BACKEND_IMAGE:  theepicbook-backend
   FRONTEND_IMAGE: theepicbook-frontend
-
-  # Portainer config
-  PORTAINER_URL:        http://localhost:9000
-  PORTAINER_STACK_NAME: theepicbook-dev
 
 jobs:
 
@@ -75,7 +64,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # Need full git history to push changes
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
@@ -84,24 +72,19 @@ jobs:
         id: sha
         run: |
           echo "sha=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
-          echo "short_sha=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
 
       # Update image tags in dev GitOps manifest
-      # CI already pushed images with this SHA
-      # Portainer polls this file from Git every 60s
-      # Docs: https://docs.portainer.io/user/docker/stacks/add#git-repository
+      # CI already pushed images with this SHA to Artifact Registry
       - name: Update dev image tags
         run: |
-          # Update backend image tag
           sed -i "s|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:.*|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:${{ steps.sha.outputs.sha }}|g" \
             gitops/dev/docker-compose.yml
 
-          # Update frontend image tag
           sed -i "s|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:.*|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:${{ steps.sha.outputs.sha }}|g" \
             gitops/dev/docker-compose.yml
 
-      # Commit and push updated manifest
-      # Portainer detects this commit → redeploys the stack
+      # Commit and push updated manifest back to git
+      # This keeps git as the single source of truth for what is deployed
       - name: Commit and push updated manifests
         run: |
           git config user.email "github-actions@cloudopshub.com"
@@ -111,9 +94,9 @@ jobs:
             git commit -m "cd: update dev image tags to ${{ steps.sha.outputs.sha }}"
           git push
 
-  # ── JOB 3: Bootstrap Portainer on VM ────────────────────────────
-  bootstrap-portainer:
-    name: Bootstrap Portainer
+  # ── JOB 3: Deploy to Dev VM ─────────────────────────────────────
+  deploy:
+    name: Deploy to Dev VM
     runs-on: ubuntu-latest
     needs: update-gitops
 
@@ -122,9 +105,6 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       # Authenticate to GCP
       # Uses Workload Identity Federation — no static keys
       # Docs: https://github.com/google-github-actions/auth
@@ -138,27 +118,19 @@ jobs:
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
 
-      # SSH into VM via Cloud IAP and bootstrap Portainer
+      # SSH into VM via Cloud IAP and deploy
       #
       # What this does:
-      # 1. Clones repo on first boot (or pulls latest)
-      # 2. Starts Portainer if not already running
-      # 3. Waits for Portainer API to be ready
-      # 4. Creates admin user on first boot (idempotent)
-      # 5. Gets auth token
-      # 6. Checks if Git stack already exists
-      # 7. Creates stack (first run) or updates it (subsequent runs)
-      #
-      # Portainer Git stack config:
-      # - Repo: https://github.com/glare247/theepicbook
-      # - Compose path: gitops/dev/docker-compose.yml
-      # - Auto-update: every 60 seconds
+      # 1. Pulls latest code (including the updated docker-compose.yml we just committed)
+      # 2. Authenticates Docker to pull from GCP Artifact Registry
+      # 3. Pulls the new images
+      # 4. Restarts containers with new images (zero-downtime for unchanged containers)
       #
       # VM has no public IP — access only via Cloud IAP
       # COS filesystem: /mnt/stateful_partition persists across reboots
       # docker-compose installed to /var/bin by startup script
       # Docs: https://cloud.google.com/iap/docs/using-tcp-forwarding
-      - name: Bootstrap Portainer via IAP SSH
+      - name: Deploy via IAP SSH
         run: |
           gcloud compute ssh ${{ env.VM_NAME }} \
             --zone=${{ env.VM_ZONE }} \
@@ -169,89 +141,22 @@ jobs:
               export PATH=/var/bin:\$PATH
               REPO=/mnt/stateful_partition/cloudopshub
 
-              echo '=== Step 1: Clone or update repo ==='
-              if [ ! -d \$REPO/.git ]; then
-                git clone https://github.com/glare247/theepicbook.git \$REPO
-              else
-                git -C \$REPO pull origin main
-              fi
+              echo '=== Step 1: Pull latest code ==='
+              git -C \$REPO pull origin main
 
-              echo '=== Step 2: Start Portainer (idempotent) ==='
-              docker-compose -f \$REPO/gitops/dev/portainer.yml up -d
+              echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
+              gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-              echo '=== Step 3: Wait for Portainer API ==='
-              for i in \$(seq 1 12); do
-                if curl -sf http://localhost:9000/api/status > /dev/null 2>&1; then
-                  echo 'Portainer API is ready'
-                  break
-                fi
-                echo \"Attempt \${i}/12: Portainer not ready yet, waiting 5s...\"
-                sleep 5
-              done
+              echo '=== Step 3: Pull new images ==='
+              docker-compose -f \$REPO/gitops/dev/docker-compose.yml pull
 
-              echo '=== Step 4: Create admin user (first boot only) ==='
-              # Returns 409 if user already exists — that is expected and safe
-              curl -sf -X POST http://localhost:9000/api/users/admin/init \
-                -H 'Content-Type: application/json' \
-                -d '{\"Username\":\"admin\",\"Password\":\"${{ secrets.PORTAINER_ADMIN_PASSWORD }}\"}' \
-                || true
+              echo '=== Step 4: Restart containers ==='
+              docker-compose -f \$REPO/gitops/dev/docker-compose.yml up -d
 
-              echo '=== Step 5: Get auth token ==='
-              TOKEN=\$(curl -sf -X POST http://localhost:9000/api/auth \
-                -H 'Content-Type: application/json' \
-                -d '{\"username\":\"admin\",\"password\":\"${{ secrets.PORTAINER_ADMIN_PASSWORD }}\"}' \
-                | grep -o '\"jwt\":\"[^\"]*\"' | cut -d'\"' -f4)
-
-              if [ -z \"\$TOKEN\" ]; then
-                echo 'ERROR: Failed to get Portainer auth token'
-                exit 1
-              fi
-              echo 'Auth token obtained'
-
-              echo '=== Step 6: Get local endpoint ID ==='
-              ENDPOINT_ID=\$(curl -sf http://localhost:9000/api/endpoints \
-                -H \"Authorization: Bearer \$TOKEN\" \
-                | grep -o '\"Id\":[0-9]*' | head -1 | cut -d':' -f2)
-              ENDPOINT_ID=\${ENDPOINT_ID:-1}
-              echo \"Endpoint ID: \$ENDPOINT_ID\"
-
-              echo '=== Step 7: Check if Git stack exists ==='
-              STACK_ID=\$(curl -sf http://localhost:9000/api/stacks \
-                -H \"Authorization: Bearer \$TOKEN\" \
-                | grep -o '\"Id\":[0-9]*,\"Name\":\"${{ env.PORTAINER_STACK_NAME }}\"' \
-                | grep -o '\"Id\":[0-9]*' | cut -d':' -f2)
-
-              if [ -z \"\$STACK_ID\" ]; then
-                echo '=== Step 8a: Create Git stack (first run) ==='
-                curl -sf -X POST \
-                  \"http://localhost:9000/api/stacks/create/standalone/repository?endpointId=\$ENDPOINT_ID\" \
-                  -H \"Authorization: Bearer \$TOKEN\" \
-                  -H 'Content-Type: application/json' \
-                  -d '{
-                    \"name\": \"${{ env.PORTAINER_STACK_NAME }}\",
-                    \"repositoryURL\": \"https://github.com/glare247/theepicbook\",
-                    \"repositoryReferenceName\": \"refs/heads/main\",
-                    \"composeFile\": \"gitops/dev/docker-compose.yml\",
-                    \"autoUpdate\": {
-                      \"interval\": \"1m\"
-                    },
-                    \"env\": []
-                  }'
-                echo 'Git stack created — Portainer will poll Git every 60s'
-              else
-                echo \"=== Step 8b: Force redeploy existing stack (ID: \$STACK_ID) ===\"
-                curl -sf -X PUT \
-                  \"http://localhost:9000/api/stacks/\$STACK_ID/git/redeploy?endpointId=\$ENDPOINT_ID\" \
-                  -H \"Authorization: Bearer \$TOKEN\" \
-                  -H 'Content-Type: application/json' \
-                  -d '{\"pullImage\": true}'
-                echo 'Stack redeployed from latest Git commit'
-              fi
-
-              echo '=== Portainer bootstrap complete ==='
+              echo '=== Deployment complete ==='
             "
 
-      # Verify Portainer and app stack are running
+      # Confirm containers are running after deploy
       - name: Verify deployment
         run: |
           gcloud compute ssh ${{ env.VM_NAME }} \
@@ -260,9 +165,6 @@ jobs:
             --tunnel-through-iap \
             --command="
               export PATH=/var/bin:\$PATH
-              echo '=== Portainer status ==='
-              docker ps --filter name=theepicbook-portainer --format 'table {{.Names}}\t{{.Status}}'
-              echo ''
-              echo '=== App stack status ==='
+              echo '=== Running containers ==='
               docker ps --filter name=theepicbook --format 'table {{.Names}}\t{{.Status}}'
             "
