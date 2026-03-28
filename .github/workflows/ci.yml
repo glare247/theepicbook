@@ -261,6 +261,7 @@ jobs:
           git add gitops/dev/docker-compose.yml
           git diff --staged --quiet || \
             git commit -m "cd: update dev image tags to ${{ github.sha }} [skip ci]"
+          git pull --rebase origin main
           git push
 
       - name: Authenticate to GCP
