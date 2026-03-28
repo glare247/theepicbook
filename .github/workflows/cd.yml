@@ -141,6 +141,8 @@ jobs:
               export PATH=/usr/bin:/bin:\$PATH
               REPO=/mnt/stateful_partition/cloudopshub
               COMPOSE_IMAGE=docker/compose:1.29.2
+              PROJECT=${{ env.PROJECT_ID }}
+              ENV=dev
 
               echo '=== Step 1: Clone or pull latest code ==='
               sudo mkdir -p \$REPO
@@ -150,6 +152,40 @@ jobs:
               else
                 git clone https://github.com/glare247/theepicbook.git \$REPO
               fi
+
+              echo '=== Step 1b: Recreate .env from Secret Manager ==='
+              TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' \
+                'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+                | grep -o '"access_token":"[^"]*"' | cut -d'\"' -f4)
+
+              fetch_secret() {
+                curl -sf -H \"Authorization: Bearer \$TOKEN\" \
+                  \"https://secretmanager.googleapis.com/v1/projects/\$PROJECT/secrets/\${1}/versions/latest:access\" \
+                  | grep -o '\"data\":\"[^\"]*\"' | cut -d'\"' -f4 | base64 -d
+              }
+
+              DB_HOST=\$(fetch_secret \"\${ENV}-db-host\")
+              DB_PASSWORD=\$(fetch_secret \"\${ENV}-db-password\")
+              SLACK_WEBHOOK_URL=\$(fetch_secret \"\${ENV}-slack-webhook-url\" || echo '')
+              ALERTMANAGER_EMAIL_TO=\$(fetch_secret \"\${ENV}-alert-email-to\" || echo '')
+              ALERTMANAGER_EMAIL_FROM=\$(fetch_secret \"\${ENV}-alert-email-from\" || echo 'alerts@cloudopshub.com')
+              ALERTMANAGER_SMTP_HOST=\$(fetch_secret \"\${ENV}-alert-smtp-host\" || echo 'smtp.gmail.com:587')
+              ALERTMANAGER_SMTP_USER=\$(fetch_secret \"\${ENV}-alert-smtp-user\" || echo '')
+              ALERTMANAGER_SMTP_PASS=\$(fetch_secret \"\${ENV}-alert-smtp-pass\" || echo '')
+
+              cat > \$REPO/.env <<ENVEOF
+DB_HOST=\${DB_HOST}
+DB_USER=appuser
+DB_PASSWORD=\${DB_PASSWORD}
+DB_NAME=bookstore
+SLACK_WEBHOOK_URL=\${SLACK_WEBHOOK_URL}
+ALERTMANAGER_EMAIL_TO=\${ALERTMANAGER_EMAIL_TO}
+ALERTMANAGER_EMAIL_FROM=\${ALERTMANAGER_EMAIL_FROM}
+ALERTMANAGER_SMTP_HOST=\${ALERTMANAGER_SMTP_HOST}
+ALERTMANAGER_SMTP_USER=\${ALERTMANAGER_SMTP_USER}
+ALERTMANAGER_SMTP_PASS=\${ALERTMANAGER_SMTP_PASS}
+ENVEOF
+              chmod 600 \$REPO/.env
 
               echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
               /usr/share/google/dockercfg_update.sh
