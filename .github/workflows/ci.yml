@@ -384,5 +384,5 @@ jobs:
             --tunnel-through-iap \
             --command="
               echo '=== Running containers ==='
-              docker ps --filter name=theepicbook --format 'table {{.Names}}\t{{.Status}}'
+              sudo docker ps --filter name=theepicbook --format 'table {{.Names}}\t{{.Status}}'
             "
