@@ -131,7 +131,19 @@ resource "google_iam_workload_identity_pool_provider" "github_provider" {
   }
 }
 
-# ── 10. Allow GitHub Actions from your repo to use the SA ────────
+# ── 11. IAM — GitHub Actions SA can act as the VM SA ─────────────
+# Required for gcloud compute ssh via Cloud IAP.
+# Without this, GCP rejects SSH with "iam.serviceAccounts.actAs denied"
+# even though IAP tunnel + OS Login roles are already present.
+# This is a SA-level binding (not project-level) — scoped to vm_sa only.
+# Docs: https://cloud.google.com/compute/docs/oslogin/set-up-oslogin
+resource "google_service_account_iam_member" "github_actions_sa_user" {
+  service_account_id = google_service_account.vm_sa.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_actions_sa.email}"
+}
+
+# ── 12. Allow GitHub Actions from your repo to use the SA ────────
 resource "google_service_account_iam_member" "github_actions_wif" {
   service_account_id = google_service_account.github_actions_sa.name
   role               = "roles/iam.workloadIdentityUser"
