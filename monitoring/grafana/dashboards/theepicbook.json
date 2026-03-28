@@ -294,7 +294,7 @@
       "targets": [
         {
           "expr": "rate(http_requests_total[5m])",
-          "legendFormat": "{{method}} {{status_code}}",
+          "legendFormat": "{{method}} {{statusCode}}",
           "refId": "A"
         }
       ]
