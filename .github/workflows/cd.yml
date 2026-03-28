@@ -9,12 +9,12 @@
 #
 # Pipeline stages:
 # 1. Check CI      — only proceed if CI passed
-# 2. Update GitOps — update image tags in gitops/dev/docker-compose.yml
+# 2. Update GitOps — update image tags in gitops/dev/docker compose.yml
 # 3. Deploy        — SSH into GCP VM via Cloud IAP and restart containers
 #
 # Deployment flow:
-# CI pushes images → CD updates gitops/dev/docker-compose.yml
-# → SSH into VM → git pull → docker-compose pull → docker-compose up -d
+# CI pushes images → CD updates gitops/dev/docker compose.yml
+# → SSH into VM → git pull → docker compose pull → docker compose up -d
 # ─────────────────────────────────────────────────────────────────
 
 name: CD Pipeline
@@ -78,10 +78,10 @@ jobs:
       - name: Update dev image tags
         run: |
           sed -i "s|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:.*|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:${{ steps.sha.outputs.sha }}|g" \
-            gitops/dev/docker-compose.yml
+            gitops/dev/docker compose.yml
 
           sed -i "s|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:.*|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:${{ steps.sha.outputs.sha }}|g" \
-            gitops/dev/docker-compose.yml
+            gitops/dev/docker compose.yml
 
       # Commit and push updated manifest back to git
       # This keeps git as the single source of truth for what is deployed
@@ -89,7 +89,7 @@ jobs:
         run: |
           git config user.email "github-actions@cloudopshub.com"
           git config user.name  "GitHub Actions"
-          git add gitops/dev/docker-compose.yml
+          git add gitops/dev/docker compose.yml
           git diff --staged --quiet || \
             git commit -m "cd: update dev image tags to ${{ steps.sha.outputs.sha }}"
           git push
@@ -121,14 +121,14 @@ jobs:
       # SSH into VM via Cloud IAP and deploy
       #
       # What this does:
-      # 1. Pulls latest code (including the updated docker-compose.yml we just committed)
+      # 1. Pulls latest code (including the updated docker compose.yml we just committed)
       # 2. Authenticates Docker to pull from GCP Artifact Registry
       # 3. Pulls the new images
       # 4. Restarts containers with new images (zero-downtime for unchanged containers)
       #
       # VM has no public IP — access only via Cloud IAP
       # COS filesystem: /mnt/stateful_partition persists across reboots
-      # docker-compose installed to /var/bin by startup script
+      # docker compose installed to /var/bin by startup script
       # Docs: https://cloud.google.com/iap/docs/using-tcp-forwarding
       - name: Deploy via IAP SSH
         run: |
@@ -154,10 +154,10 @@ jobs:
               /usr/share/google/dockercfg_update.sh
 
               echo '=== Step 3: Pull new images ==='
-              docker-compose -f \$REPO/gitops/dev/docker-compose.yml pull
+              docker compose -f \$REPO/gitops/dev/docker compose.yml pull
 
               echo '=== Step 4: Restart containers ==='
-              docker-compose -f \$REPO/gitops/dev/docker-compose.yml up -d
+              docker compose -f \$REPO/gitops/dev/docker compose.yml up -d
 
               echo '=== Deployment complete ==='
             "
