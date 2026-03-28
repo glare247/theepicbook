@@ -142,10 +142,11 @@ jobs:
               REPO=/mnt/stateful_partition/cloudopshub
 
               echo '=== Step 1: Clone or pull latest code ==='
-              if [ ! -d \$REPO/.git ]; then
-                git clone https://github.com/glare247/theepicbook.git \$REPO
-              else
+              if [ -d \$REPO/.git ]; then
                 git -C \$REPO pull origin main
+              else
+                rm -rf \$REPO
+                git clone https://github.com/glare247/theepicbook.git \$REPO
               fi
 
               echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
