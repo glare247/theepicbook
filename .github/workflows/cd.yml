@@ -138,12 +138,9 @@ jobs:
             --tunnel-through-iap \
             --command="
               set -e
-              export PATH=/mnt/stateful_partition:/usr/bin:/bin:\$PATH
+              export PATH=/usr/bin:/bin:\$PATH
               REPO=/mnt/stateful_partition/cloudopshub
-
-              echo '=== Step 0: Stage docker-compose binary ==='
-              sudo cp /var/bin/docker-compose /mnt/stateful_partition/docker-compose
-              sudo chmod +x /mnt/stateful_partition/docker-compose
+              COMPOSE_IMAGE=docker/compose:1.29.2
 
               echo '=== Step 1: Clone or pull latest code ==='
               sudo mkdir -p \$REPO
@@ -158,10 +155,20 @@ jobs:
               /usr/share/google/dockercfg_update.sh
 
               echo '=== Step 3: Pull new images ==='
-              docker-compose -f \$REPO/gitops/dev/docker-compose.yml pull
+              docker run --rm \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v \$REPO:\$REPO \
+                -w \$REPO \
+                \$COMPOSE_IMAGE \
+                -f \$REPO/gitops/dev/docker-compose.yml pull
 
               echo '=== Step 4: Restart containers ==='
-              docker-compose -f \$REPO/gitops/dev/docker-compose.yml up -d
+              docker run --rm \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v \$REPO:\$REPO \
+                -w \$REPO \
+                \$COMPOSE_IMAGE \
+                -f \$REPO/gitops/dev/docker-compose.yml up -d
 
               echo '=== Deployment complete ==='
             "
