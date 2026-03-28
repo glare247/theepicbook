@@ -77,14 +77,13 @@ resource "google_compute_instance" "app_vm" {
       # ── Install docker-compose ───────────────────────────────────
       # Docker is pre-installed on COS — only Compose is missing.
       # /usr/local/bin is read-only on COS → install to /var/bin instead
+      # -f flag makes curl fail loudly on HTTP errors (4xx/5xx)
       mkdir -p /var/bin
-      curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
+      curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
         -o /var/bin/docker-compose
       chmod +x /var/bin/docker-compose
+      /var/bin/docker-compose version
 
-      # Symlink into PATH — /var/bin is writable but may not be in PATH
-      # /usr/local/bin is read-only, so we use /home/chronos (always writable)
-      # Simplest: add /var/bin to PATH for this script
       export PATH="/var/bin:$PATH"
 
       # ── Clone or update application repo ─────────────────────────
