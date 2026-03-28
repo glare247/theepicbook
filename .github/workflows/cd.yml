@@ -69,11 +69,15 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      # Get the commit SHA from the CI pipeline run
+      # Get the commit SHA — from workflow_run event or current SHA for dispatched runs
       - name: Get commit SHA
         id: sha
         run: |
-          echo "sha=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          if [ -z "$SHA" ]; then
+            SHA="${{ github.sha }}"
+          fi
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
 
       # Update image tags in dev GitOps manifest
       # CI already pushed images with this SHA to Artifact Registry

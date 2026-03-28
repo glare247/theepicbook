@@ -210,3 +210,24 @@ jobs:
         with:
           working_directory: terraform/
           soft_fail: true
+
+  # ── JOB 4: Trigger CD Pipeline ──────────────────────────────────
+  # Explicitly dispatches the CD workflow after CI passes.
+  # More reliable than workflow_run which can silently skip.
+  trigger-cd:
+    name: Trigger CD Pipeline
+    runs-on: ubuntu-latest
+    needs: [build-and-push, terraform-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      actions: write
+
+    steps:
+      - name: Dispatch CD Pipeline
+        run: |
+          gh workflow run cd.yml \
+            --repo ${{ github.repository }} \
+            --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
