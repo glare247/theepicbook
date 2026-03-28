@@ -138,8 +138,12 @@ jobs:
             --tunnel-through-iap \
             --command="
               set -e
-              export PATH=/var/bin:/usr/bin:/bin:\$PATH
+              export PATH=/tmp:/usr/bin:/bin:\$PATH
               REPO=/mnt/stateful_partition/cloudopshub
+
+              echo '=== Step 0: Stage docker-compose binary ==='
+              cp /var/bin/docker-compose /tmp/docker-compose
+              chmod +x /tmp/docker-compose
 
               echo '=== Step 1: Clone or pull latest code ==='
               sudo mkdir -p \$REPO
@@ -154,10 +158,10 @@ jobs:
               /usr/share/google/dockercfg_update.sh
 
               echo '=== Step 3: Pull new images ==='
-              docker compose -f \$REPO/gitops/dev/docker-compose.yml pull
+              docker-compose -f \$REPO/gitops/dev/docker-compose.yml pull
 
               echo '=== Step 4: Restart containers ==='
-              docker compose -f \$REPO/gitops/dev/docker-compose.yml up -d
+              docker-compose -f \$REPO/gitops/dev/docker-compose.yml up -d
 
               echo '=== Deployment complete ==='
             "
