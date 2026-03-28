@@ -291,8 +291,8 @@ jobs:
               if [ ! -f "\$COMPOSE_BIN" ]; then
                 sudo curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
                   -o \$COMPOSE_BIN
-                sudo chmod +x \$COMPOSE_BIN
               fi
+              sudo chmod +x \$COMPOSE_BIN
 
               echo '=== Step 1: Clone or pull latest code ==='
               sudo mkdir -p \$REPO
