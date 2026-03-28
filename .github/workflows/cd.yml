@@ -145,7 +145,7 @@ jobs:
               if [ -d \$REPO/.git ]; then
                 git -C \$REPO pull origin main
               else
-                rm -rf \$REPO
+                sudo rm -rf \$REPO
                 git clone https://github.com/glare247/theepicbook.git \$REPO
               fi
 
