@@ -190,8 +190,8 @@ jobs:
                 echo "ALERTMANAGER_SMTP_HOST=\${ALERTMANAGER_SMTP_HOST}"
                 echo "ALERTMANAGER_SMTP_USER=\${ALERTMANAGER_SMTP_USER}"
                 echo "ALERTMANAGER_SMTP_PASS=\${ALERTMANAGER_SMTP_PASS}"
-              } > \$REPO/.env
-              chmod 600 \$REPO/.env
+              } > \$REPO/gitops/dev/.env
+              chmod 600 \$REPO/gitops/dev/.env
 
               echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
               /usr/share/google/dockercfg_update.sh
