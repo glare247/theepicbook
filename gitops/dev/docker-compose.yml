@@ -112,6 +112,23 @@ services:
     networks:
       - theepicbook-network
 
+  # ── cAdvisor — Docker container metrics ─────────────────────────
+  # Exposes per-container CPU, memory, network metrics to Prometheus
+  # Docs: https://github.com/google/cadvisor
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: theepicbook-cadvisor
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - theepicbook-network
+
   # ── Alertmanager ────────────────────────────────────────────────
   # Credentials injected from VM .env file (written by startup script
   # from GCP Secret Manager). alertmanager.yml uses $VAR substitution.

@@ -72,9 +72,10 @@ scrape_configs:
         target_label:  instance
         replacement:   theepicbook-app
 
-  # ── 4. Nginx metrics ────────────────────────────────────────────
-  - job_name: nginx
+  # ── 4. cAdvisor — Docker container metrics ──────────────────────
+  # CPU, memory, network per container — visible in Grafana dashboards
+  # Docs: https://github.com/google/cadvisor
+  - job_name: cadvisor
     static_configs:
       - targets:
-          - nginx:80
-    metrics_path: /metrics
+          - cadvisor:8080
