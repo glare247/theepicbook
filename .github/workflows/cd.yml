@@ -138,12 +138,12 @@ jobs:
             --tunnel-through-iap \
             --command="
               set -e
-              export PATH=/tmp:/usr/bin:/bin:\$PATH
+              export PATH=/mnt/stateful_partition:/usr/bin:/bin:\$PATH
               REPO=/mnt/stateful_partition/cloudopshub
 
               echo '=== Step 0: Stage docker-compose binary ==='
-              cp /var/bin/docker-compose /tmp/docker-compose
-              chmod +x /tmp/docker-compose
+              sudo cp /var/bin/docker-compose /mnt/stateful_partition/docker-compose
+              sudo chmod +x /mnt/stateful_partition/docker-compose
 
               echo '=== Step 1: Clone or pull latest code ==='
               sudo mkdir -p \$REPO
