@@ -331,15 +331,17 @@ jobs:
               chmod 600 \$REPO/gitops/dev/.env
 
               echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
+              DOCKER_CONFIG=/mnt/stateful_partition/.docker
+              sudo mkdir -p \$DOCKER_CONFIG
               AR_TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' \
                 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
                 | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
-              echo \$AR_TOKEN | sudo docker login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
+              echo \$AR_TOKEN | sudo docker --config \$DOCKER_CONFIG login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
 
               echo '=== Step 3: Pull new images ==='
               sudo docker run --rm \
                 -v /var/run/docker.sock:/var/run/docker.sock \
-                -v /root/.docker:/root/.docker:ro \
+                -v \$DOCKER_CONFIG:/root/.docker:ro \
                 -v \$REPO:\$REPO \
                 -w \$REPO/gitops/dev \
                 \$COMPOSE_IMAGE \
@@ -348,7 +350,7 @@ jobs:
               echo '=== Step 4: Restart containers ==='
               sudo docker run --rm \
                 -v /var/run/docker.sock:/var/run/docker.sock \
-                -v /root/.docker:/root/.docker:ro \
+                -v \$DOCKER_CONFIG:/root/.docker:ro \
                 -v \$REPO:\$REPO \
                 -w \$REPO/gitops/dev \
                 \$COMPOSE_IMAGE \
