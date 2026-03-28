@@ -102,6 +102,7 @@ jobs:
           git add gitops/dev/docker-compose.yml
           git diff --staged --quiet || \
             git commit -m "cd: update dev image tags to ${{ steps.sha.outputs.sha }} [skip ci]"
+          git pull --rebase origin main
           git push
 
   # ── JOB 3: Deploy to Dev VM ──────────────────────────────────────
