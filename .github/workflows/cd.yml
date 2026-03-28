@@ -193,13 +193,42 @@ jobs:
                 | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
               echo \$AR_TOKEN | sudo docker --config \$DOCKER_CONFIG login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
 
-              echo '=== Step 3: Pull new images ==='
-              sudo DOCKER_CONFIG=\$DOCKER_CONFIG /var/bin/docker-compose \
-                -f \$REPO/gitops/dev/docker-compose.yml pull
+              REGISTRY=us-central1-docker.pkg.dev/\$PROJECT/${{ env.REPOSITORY_ID }}
+              SHA=${{ github.event.workflow_run.head_sha || github.sha }}
 
-              echo '=== Step 4: Restart containers ==='
-              sudo DOCKER_CONFIG=\$DOCKER_CONFIG /var/bin/docker-compose \
-                -f \$REPO/gitops/dev/docker-compose.yml up -d
+              echo '=== Step 3: Pull new images ==='
+              sudo docker --config \$DOCKER_CONFIG pull \$REGISTRY/${{ env.BACKEND_IMAGE }}:\$SHA
+              sudo docker --config \$DOCKER_CONFIG pull \$REGISTRY/${{ env.FRONTEND_IMAGE }}:\$SHA
+
+              echo '=== Step 4: Ensure network exists ==='
+              sudo docker network inspect theepicbook-network >/dev/null 2>&1 || \
+                sudo docker network create theepicbook-network
+
+              echo '=== Step 5: Deploy app ==='
+              sudo docker stop theepicbook-app 2>/dev/null || true
+              sudo docker rm   theepicbook-app 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-app \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                --env-file \$REPO/gitops/dev/.env \
+                -e PORT=8080 \
+                -e NODE_ENV=production \
+                --log-driver gcplogs \
+                --log-opt tag=theepicbook-app \
+                \$REGISTRY/${{ env.BACKEND_IMAGE }}:\$SHA
+
+              echo '=== Step 6: Deploy nginx ==='
+              sudo docker stop theepicbook-nginx 2>/dev/null || true
+              sudo docker rm   theepicbook-nginx 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-nginx \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 80:80 \
+                --log-driver gcplogs \
+                --log-opt tag=theepicbook-nginx \
+                \$REGISTRY/${{ env.FRONTEND_IMAGE }}:\$SHA
 
               echo '=== Deployment complete ==='
             "
