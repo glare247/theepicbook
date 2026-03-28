@@ -284,8 +284,17 @@ jobs:
               export PATH=/usr/bin:/bin:/var/bin:\$PATH
               REPO=/mnt/stateful_partition/cloudopshub
               DOCKER_CONFIG=/mnt/stateful_partition/.docker
+              COMPOSE_BIN=/mnt/stateful_partition/bin/docker-compose
               PROJECT=${{ env.PROJECT_ID }}
               ENV=dev
+
+              echo '=== Step 0: Ensure docker-compose is installed ==='
+              if [ ! -f "\$COMPOSE_BIN" ]; then
+                sudo mkdir -p \$(dirname \$COMPOSE_BIN)
+                sudo curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
+                  -o \$COMPOSE_BIN
+                sudo chmod +x \$COMPOSE_BIN
+              fi
 
               echo '=== Step 1: Clone or pull latest code ==='
               sudo mkdir -p \$REPO
@@ -338,11 +347,11 @@ jobs:
               echo \$AR_TOKEN | sudo docker --config \$DOCKER_CONFIG login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
 
               echo '=== Step 3: Pull new images ==='
-              sudo DOCKER_CONFIG=\$DOCKER_CONFIG docker-compose \
+              sudo DOCKER_CONFIG=\$DOCKER_CONFIG \$COMPOSE_BIN \
                 -f \$REPO/gitops/dev/docker-compose.yml pull
 
               echo '=== Step 4: Restart containers ==='
-              sudo DOCKER_CONFIG=\$DOCKER_CONFIG docker-compose \
+              sudo DOCKER_CONFIG=\$DOCKER_CONFIG \$COMPOSE_BIN \
                 -f \$REPO/gitops/dev/docker-compose.yml up -d
 
               echo '=== Deployment complete ==='
