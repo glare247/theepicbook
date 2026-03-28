@@ -1,0 +1,198 @@
+
+# ─────────────────────────────────────────────────────────────────
+# TERRAFORM PIPELINE — GitHub Actions
+#
+# Official docs:
+# https://developer.hashicorp.com/terraform/tutorials/automation/github-actions
+#
+# Triggers:
+#   - Auto plan on push/PR to main when terraform/ files change
+#   - Manual apply/destroy via workflow_dispatch
+#
+# Pipeline stages (auto):
+#   1. Validate — terraform validate for all 3 environments
+#   2. Plan dev  — terraform plan for dev environment
+#
+# Pipeline stages (manual):
+#   1. Apply/Destroy — for selected environment
+#      Prod requires GitHub environment protection (required reviewers)
+# ─────────────────────────────────────────────────────────────────
+
+name: Terraform
+
+on:
+  push:
+    branches: [main]
+    paths: ['terraform/**']
+  pull_request:
+    branches: [main]
+    paths: ['terraform/**']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+      action:
+        description: 'Terraform action'
+        required: true
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+
+env:
+  TF_VERSION: "~> 1.5"
+
+jobs:
+
+  # ── JOB 1: Validate all environments ─────────────────────────────
+  validate:
+    name: Validate — ${{ matrix.env }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+
+    strategy:
+      matrix:
+        env: [dev, staging, prod]
+      fail-fast: false
+
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: terraform/environments/${{ matrix.env }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+  # ── JOB 2: Plan dev on push/PR ───────────────────────────────────
+  plan-dev:
+    name: Plan — Dev
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    defaults:
+      run:
+        working-directory: terraform/environments/dev
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color
+        continue-on-error: true
+
+      # Post plan output as a PR comment so reviewers can see infra changes
+      - name: Post plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const planOutput = `${{ steps.plan.outputs.stdout }}`.substring(0, 60000);
+            const body = [
+              '#### Terraform Plan — Dev',
+              '```',
+              planOutput || '(no output)',
+              '```',
+              `**Status:** \`${{ steps.plan.outcome }}\``
+            ].join('\n');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
+
+      - name: Fail if plan errored
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ── JOB 3: Manual apply/destroy for any environment ──────────────
+  apply:
+    name: ${{ github.event.inputs.action }} — ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    environment: ${{ github.event.inputs.environment == 'prod' && 'production' || github.event.inputs.environment }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: terraform/environments/${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -no-color
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve
