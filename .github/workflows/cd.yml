@@ -12,12 +12,15 @@
 # Pipeline stages:
 # 1. Check CI      — gate on CI success (auto) or always pass (manual)
 # 2. Update GitOps — update image tags in gitops manifest (dev only)
-# 3. Deploy        — SSH into GCP VM and start all containers
+# 3. Deploy Dev    — SSH into dev-app-vm and start all containers
+# 4. Deploy Staging — runs after dev succeeds (auto) or manually targeted
+# 5. Deploy Prod   — runs after staging succeeds (auto) or manually targeted
+#                    requires GitHub environment approval gate
 #
 # Environments:
 #   dev     — auto-deploys after every CI pass; also manually triggerable
-#   staging — manual deploy only (staging-app-vm)
-#   prod    — manual deploy only with GitHub environment protection (prod-app-vm)
+#   staging — auto-promotes after dev succeeds; also manually triggerable
+#   prod    — auto-promotes after staging succeeds + approval gate (prod-app-vm)
 # ─────────────────────────────────────────────────────────────────
 
 name: CD Pipeline
@@ -313,7 +316,14 @@ jobs:
   deploy-staging:
     name: Deploy — Staging
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' }}
+    needs: [check-ci, deploy-dev]
+    if: >
+      always() &&
+      needs.check-ci.result == 'success' &&
+      (
+        (github.event_name == 'workflow_run' && needs.deploy-dev.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+      )
 
     permissions:
       contents: read
@@ -516,7 +526,14 @@ jobs:
   deploy-prod:
     name: Deploy — Production
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod' }}
+    needs: [check-ci, deploy-staging]
+    if: >
+      always() &&
+      needs.check-ci.result == 'success' &&
+      (
+        (github.event_name == 'workflow_run' && needs.deploy-staging.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
+      )
     environment: production
 
     permissions:
