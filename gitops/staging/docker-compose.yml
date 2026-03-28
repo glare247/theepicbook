@@ -58,8 +58,7 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin123
+    # GF_SECURITY_ADMIN_PASSWORD injected at deploy time from Secret Manager (staging-grafana-admin-password)
     volumes:
       - grafana_data:/var/lib/grafana
       - ../../monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml

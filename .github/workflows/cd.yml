@@ -5,16 +5,19 @@
 # Official docs:
 # https://docs.github.com/en/actions
 #
-# Triggers after CI pipeline completes successfully
+# Triggers:
+#   - Automatically after CI pipeline succeeds on main (dev only)
+#   - Manually via workflow_dispatch for any environment
 #
 # Pipeline stages:
-# 1. Check CI      — only proceed if CI passed
-# 2. Update GitOps — update image tags in gitops/dev/docker-compose.yml
-# 3. Deploy        — SSH into GCP VM via Cloud IAP and restart containers
+# 1. Check CI      — gate on CI success (auto) or always pass (manual)
+# 2. Update GitOps — update image tags in gitops manifest (dev only)
+# 3. Deploy        — SSH into GCP VM and start all containers
 #
-# Deployment flow:
-# CI pushes images → CD updates gitops/dev/docker-compose.yml
-# → SSH into VM → git pull → docker compose pull → docker compose up -d
+# Environments:
+#   dev     — auto-deploys after every CI pass; also manually triggerable
+#   staging — manual deploy only (staging-app-vm)
+#   prod    — manual deploy only with GitHub environment protection (prod-app-vm)
 # ─────────────────────────────────────────────────────────────────
 
 name: CD Pipeline
@@ -25,34 +28,44 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, staging, prod]
+      image_tag:
+        description: 'Image tag to deploy (leave empty to use latest CI tag)'
+        required: false
 
 env:
   PROJECT_ID:    expandox-project-2
   REGION:        us-central1
   REPOSITORY_ID: cloudopshub
-  VM_NAME:       dev-app-vm
-  VM_ZONE:       us-central1-a
 
-  # Image names
   BACKEND_IMAGE:  theepicbook-backend
   FRONTEND_IMAGE: theepicbook-frontend
 
 jobs:
 
-  # ── JOB 1: Only run if CI passed ────────────────────────────────
+  # ── JOB 1: Gate on CI success ────────────────────────────────────
   check-ci:
     name: Check CI Status
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: CI passed — proceeding with CD
-        run: echo "CI pipeline passed — starting CD pipeline"
+      - name: Proceeding with deployment
+        run: echo "CI passed or manual trigger — starting CD"
 
-  # ── JOB 2: Update GitOps Manifests ──────────────────────────────
+  # ── JOB 2: Update GitOps Manifests (dev only) ────────────────────
   update-gitops:
     name: Update GitOps Manifests
     runs-on: ubuntu-latest
     needs: check-ci
+    if: >
+      github.event_name == 'workflow_run' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
 
     permissions:
       contents: write
@@ -65,18 +78,15 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      # Get the commit SHA — from workflow_run event or current SHA for dispatched runs
       - name: Get commit SHA
         id: sha
         run: |
           SHA="${{ github.event.workflow_run.head_sha }}"
           if [ -z "$SHA" ]; then
-            SHA="${{ github.sha }}"
+            SHA="${{ github.event.inputs.image_tag || github.sha }}"
           fi
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
-      # Update image tags in dev GitOps manifest
-      # CI already pushed images with this SHA to Artifact Registry
       - name: Update dev image tags
         run: |
           sed -i "s|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:.*|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.BACKEND_IMAGE }}:${{ steps.sha.outputs.sha }}|g" \
@@ -85,8 +95,6 @@ jobs:
           sed -i "s|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:.*|${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_ID }}/${{ env.FRONTEND_IMAGE }}:${{ steps.sha.outputs.sha }}|g" \
             gitops/dev/docker-compose.yml
 
-      # Commit and push updated manifest back to git
-      # This keeps git as the single source of truth for what is deployed
       - name: Commit and push updated manifests
         run: |
           git config user.email "github-actions@cloudopshub.com"
@@ -96,46 +104,33 @@ jobs:
             git commit -m "cd: update dev image tags to ${{ steps.sha.outputs.sha }} [skip ci]"
           git push
 
-  # ── JOB 3: Deploy to Dev VM ─────────────────────────────────────
-  deploy:
-    name: Deploy to Dev VM
+  # ── JOB 3: Deploy to Dev VM ──────────────────────────────────────
+  deploy-dev:
+    name: Deploy — Dev
     runs-on: ubuntu-latest
-    needs: update-gitops
+    needs: [check-ci, update-gitops]
+    if: >
+      github.event_name == 'workflow_run' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
 
     permissions:
       contents: read
       id-token: write
 
     steps:
-      # Authenticate to GCP
-      # Uses Workload Identity Federation — no static keys
-      # Docs: https://github.com/google-github-actions/auth
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
           service_account:            ${{ secrets.GCP_SA_EMAIL }}
 
-      # Setup gcloud CLI
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
 
-      # SSH into VM via Cloud IAP and deploy
-      #
-      # What this does:
-      # 1. Pulls latest code (including the updated docker compose.yml we just committed)
-      # 2. Authenticates Docker to pull from GCP Artifact Registry
-      # 3. Pulls the new images
-      # 4. Restarts containers with new images (zero-downtime for unchanged containers)
-      #
-      # VM has no public IP — access only via Cloud IAP
-      # COS filesystem: /mnt/stateful_partition persists across reboots
-      # docker compose installed to /var/bin by startup script
-      # Docs: https://cloud.google.com/iap/docs/using-tcp-forwarding
       - name: Deploy via IAP SSH
         run: |
-          gcloud compute ssh ${{ env.VM_NAME }} \
-            --zone=${{ env.VM_ZONE }} \
+          gcloud compute ssh dev-app-vm \
+            --zone=us-central1-a \
             --project=${{ env.PROJECT_ID }} \
             --tunnel-through-iap \
             --command="
@@ -144,6 +139,7 @@ jobs:
               DOCKER_CONFIG=/mnt/stateful_partition/.docker
               PROJECT=${{ env.PROJECT_ID }}
               ENV=dev
+              SHA=${{ github.event.workflow_run.head_sha || github.event.inputs.image_tag || github.sha }}
 
               echo '=== Step 1: Clone or pull latest code ==='
               sudo mkdir -p \$REPO
@@ -154,7 +150,7 @@ jobs:
                 git clone https://github.com/glare247/theepicbook.git \$REPO
               fi
 
-              echo '=== Step 1b: Recreate .env from Secret Manager ==='
+              echo '=== Step 1b: Fetch secrets from Secret Manager ==='
               TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' \
                 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
                 | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
@@ -167,6 +163,7 @@ jobs:
 
               DB_HOST=\$(fetch_secret \"\${ENV}-db-host\")
               DB_PASSWORD=\$(fetch_secret \"\${ENV}-db-password\")
+              GRAFANA_ADMIN_PASS=\$(fetch_secret \"\${ENV}-grafana-admin-password\" || echo 'changeme')
               SLACK_WEBHOOK_URL=\$(fetch_secret \"\${ENV}-slack-webhook-url\" || echo '')
               ALERTMANAGER_EMAIL_TO=\$(fetch_secret \"\${ENV}-alert-email-to\" || echo '')
               ALERTMANAGER_EMAIL_FROM=\$(fetch_secret \"\${ENV}-alert-email-from\" || echo 'alerts@cloudopshub.com')
@@ -175,16 +172,16 @@ jobs:
               ALERTMANAGER_SMTP_PASS=\$(fetch_secret \"\${ENV}-alert-smtp-pass\" || echo '')
 
               {
-                echo "DB_HOST=\${DB_HOST}"
-                echo "DB_USER=appuser"
-                echo "DB_PASSWORD=\${DB_PASSWORD}"
-                echo "DB_NAME=bookstore"
-                echo "SLACK_WEBHOOK_URL=\${SLACK_WEBHOOK_URL}"
-                echo "ALERTMANAGER_EMAIL_TO=\${ALERTMANAGER_EMAIL_TO}"
-                echo "ALERTMANAGER_EMAIL_FROM=\${ALERTMANAGER_EMAIL_FROM}"
-                echo "ALERTMANAGER_SMTP_HOST=\${ALERTMANAGER_SMTP_HOST}"
-                echo "ALERTMANAGER_SMTP_USER=\${ALERTMANAGER_SMTP_USER}"
-                echo "ALERTMANAGER_SMTP_PASS=\${ALERTMANAGER_SMTP_PASS}"
+                echo \"DB_HOST=\${DB_HOST}\"
+                echo \"DB_USER=appuser\"
+                echo \"DB_PASSWORD=\${DB_PASSWORD}\"
+                echo \"DB_NAME=bookstore\"
+                echo \"SLACK_WEBHOOK_URL=\${SLACK_WEBHOOK_URL}\"
+                echo \"ALERTMANAGER_EMAIL_TO=\${ALERTMANAGER_EMAIL_TO}\"
+                echo \"ALERTMANAGER_EMAIL_FROM=\${ALERTMANAGER_EMAIL_FROM}\"
+                echo \"ALERTMANAGER_SMTP_HOST=\${ALERTMANAGER_SMTP_HOST}\"
+                echo \"ALERTMANAGER_SMTP_USER=\${ALERTMANAGER_SMTP_USER}\"
+                echo \"ALERTMANAGER_SMTP_PASS=\${ALERTMANAGER_SMTP_PASS}\"
               } > \$REPO/gitops/dev/.env
               chmod 600 \$REPO/gitops/dev/.env
 
@@ -196,7 +193,6 @@ jobs:
               echo \$AR_TOKEN | sudo docker --config \$DOCKER_CONFIG login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
 
               REGISTRY=us-central1-docker.pkg.dev/\$PROJECT/${{ env.REPOSITORY_ID }}
-              SHA=${{ github.event.workflow_run.head_sha || github.sha }}
 
               echo '=== Step 3: Pull new images ==='
               sudo docker --config \$DOCKER_CONFIG pull \$REGISTRY/${{ env.BACKEND_IMAGE }}:\$SHA
@@ -232,17 +228,489 @@ jobs:
                 --log-opt gcp-log-cmd=true \
                 \$REGISTRY/${{ env.FRONTEND_IMAGE }}:\$SHA
 
+              echo '=== Step 7: Deploy Node Exporter ==='
+              sudo docker stop theepicbook-node-exporter 2>/dev/null || true
+              sudo docker rm   theepicbook-node-exporter 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-node-exporter \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 9100:9100 \
+                prom/node-exporter:latest
+
+              echo '=== Step 8: Deploy cAdvisor ==='
+              sudo docker stop theepicbook-cadvisor 2>/dev/null || true
+              sudo docker rm   theepicbook-cadvisor 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-cadvisor \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 8081:8080 \
+                -v /:/rootfs:ro \
+                -v /var/run:/var/run:ro \
+                -v /sys:/sys:ro \
+                -v /var/lib/docker/:/var/lib/docker:ro \
+                gcr.io/cadvisor/cadvisor:latest
+
+              echo '=== Step 9: Deploy Prometheus ==='
+              sudo docker volume create prometheus_data 2>/dev/null || true
+              sudo docker stop theepicbook-prometheus 2>/dev/null || true
+              sudo docker rm   theepicbook-prometheus 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-prometheus \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 9090:9090 \
+                -v prometheus_data:/prometheus \
+                -v \$REPO/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+                -v \$REPO/monitoring/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro \
+                prom/prometheus:latest
+
+              echo '=== Step 10: Deploy Alertmanager ==='
+              sudo docker stop theepicbook-alertmanager 2>/dev/null || true
+              sudo docker rm   theepicbook-alertmanager 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-alertmanager \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 9093:9093 \
+                --env-file \$REPO/gitops/dev/.env \
+                -v \$REPO/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro \
+                prom/alertmanager:latest
+
+              echo '=== Step 11: Deploy Grafana ==='
+              sudo docker volume create grafana_data 2>/dev/null || true
+              sudo docker stop theepicbook-grafana 2>/dev/null || true
+              sudo docker rm   theepicbook-grafana 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-grafana \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 3000:3000 \
+                -e GF_SECURITY_ADMIN_PASSWORD=\${GRAFANA_ADMIN_PASS} \
+                -v grafana_data:/var/lib/grafana \
+                -v \$REPO/monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro \
+                -v \$REPO/monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro \
+                -v \$REPO/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro \
+                grafana/grafana:latest
+
               echo '=== Deployment complete ==='
             "
 
-      # Confirm containers are running after deploy
       - name: Verify deployment
         run: |
-          gcloud compute ssh ${{ env.VM_NAME }} \
-            --zone=${{ env.VM_ZONE }} \
+          gcloud compute ssh dev-app-vm \
+            --zone=us-central1-a \
             --project=${{ env.PROJECT_ID }} \
             --tunnel-through-iap \
             --command="
               echo '=== Running containers ==='
-              sudo docker ps --filter name=theepicbook --format 'table {{.Names}}\t{{.Status}}'
+              sudo docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+            "
+
+  # ── JOB 4: Deploy to Staging VM ──────────────────────────────────
+  deploy-staging:
+    name: Deploy — Staging
+    runs-on: ubuntu-latest
+    needs: check-ci
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy via IAP SSH
+        run: |
+          gcloud compute ssh staging-app-vm \
+            --zone=us-central1-a \
+            --project=${{ env.PROJECT_ID }} \
+            --tunnel-through-iap \
+            --command="
+              set -e
+              REPO=/mnt/stateful_partition/cloudopshub
+              DOCKER_CONFIG=/mnt/stateful_partition/.docker
+              PROJECT=${{ env.PROJECT_ID }}
+              ENV=staging
+              SHA=${{ github.event.inputs.image_tag || 'latest' }}
+
+              echo '=== Step 1: Clone or pull latest code ==='
+              sudo mkdir -p \$REPO
+              sudo chown -R \$(whoami):\$(whoami) \$REPO
+              if [ -d \$REPO/.git ]; then
+                git -C \$REPO pull origin main
+              else
+                git clone https://github.com/glare247/theepicbook.git \$REPO
+              fi
+
+              echo '=== Step 1b: Fetch secrets from Secret Manager ==='
+              TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' \
+                'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+                | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
+
+              fetch_secret() {
+                curl -sf -H \"Authorization: Bearer \$TOKEN\" \
+                  \"https://secretmanager.googleapis.com/v1/projects/\$PROJECT/secrets/\${1}/versions/latest:access\" \
+                  | grep -o '\"data\":\"[^\"]*\"' | cut -d'\"' -f4 | base64 -d
+              }
+
+              DB_HOST=\$(fetch_secret \"\${ENV}-db-host\")
+              DB_PASSWORD=\$(fetch_secret \"\${ENV}-db-password\")
+              GRAFANA_ADMIN_PASS=\$(fetch_secret \"\${ENV}-grafana-admin-password\" || echo 'changeme')
+              SLACK_WEBHOOK_URL=\$(fetch_secret \"\${ENV}-slack-webhook-url\" || echo '')
+              ALERTMANAGER_EMAIL_TO=\$(fetch_secret \"\${ENV}-alert-email-to\" || echo '')
+              ALERTMANAGER_EMAIL_FROM=\$(fetch_secret \"\${ENV}-alert-email-from\" || echo 'alerts@cloudopshub.com')
+              ALERTMANAGER_SMTP_HOST=\$(fetch_secret \"\${ENV}-alert-smtp-host\" || echo 'smtp.gmail.com:587')
+              ALERTMANAGER_SMTP_USER=\$(fetch_secret \"\${ENV}-alert-smtp-user\" || echo '')
+              ALERTMANAGER_SMTP_PASS=\$(fetch_secret \"\${ENV}-alert-smtp-pass\" || echo '')
+
+              {
+                echo \"DB_HOST=\${DB_HOST}\"
+                echo \"DB_USER=appuser\"
+                echo \"DB_PASSWORD=\${DB_PASSWORD}\"
+                echo \"DB_NAME=bookstore\"
+                echo \"SLACK_WEBHOOK_URL=\${SLACK_WEBHOOK_URL}\"
+                echo \"ALERTMANAGER_EMAIL_TO=\${ALERTMANAGER_EMAIL_TO}\"
+                echo \"ALERTMANAGER_EMAIL_FROM=\${ALERTMANAGER_EMAIL_FROM}\"
+                echo \"ALERTMANAGER_SMTP_HOST=\${ALERTMANAGER_SMTP_HOST}\"
+                echo \"ALERTMANAGER_SMTP_USER=\${ALERTMANAGER_SMTP_USER}\"
+                echo \"ALERTMANAGER_SMTP_PASS=\${ALERTMANAGER_SMTP_PASS}\"
+              } > \$REPO/gitops/staging/.env
+              chmod 600 \$REPO/gitops/staging/.env
+
+              echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
+              sudo mkdir -p \$DOCKER_CONFIG
+              AR_TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' \
+                'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+                | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
+              echo \$AR_TOKEN | sudo docker --config \$DOCKER_CONFIG login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
+
+              REGISTRY=us-central1-docker.pkg.dev/\$PROJECT/${{ env.REPOSITORY_ID }}
+
+              echo '=== Step 3: Pull images ==='
+              sudo docker --config \$DOCKER_CONFIG pull \$REGISTRY/${{ env.BACKEND_IMAGE }}:\$SHA
+              sudo docker --config \$DOCKER_CONFIG pull \$REGISTRY/${{ env.FRONTEND_IMAGE }}:\$SHA
+
+              echo '=== Step 4: Ensure network exists ==='
+              sudo docker network inspect theepicbook-network >/dev/null 2>&1 || \
+                sudo docker network create theepicbook-network
+
+              echo '=== Step 5: Deploy app ==='
+              sudo docker stop theepicbook-app 2>/dev/null || true
+              sudo docker rm   theepicbook-app 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-app \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                --env-file \$REPO/gitops/staging/.env \
+                -e PORT=8080 \
+                -e NODE_ENV=production \
+                --log-driver gcplogs \
+                --log-opt gcp-log-cmd=true \
+                \$REGISTRY/${{ env.BACKEND_IMAGE }}:\$SHA
+
+              echo '=== Step 6: Deploy nginx ==='
+              sudo docker stop theepicbook-nginx 2>/dev/null || true
+              sudo docker rm   theepicbook-nginx 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-nginx \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 80:80 \
+                --log-driver gcplogs \
+                --log-opt gcp-log-cmd=true \
+                \$REGISTRY/${{ env.FRONTEND_IMAGE }}:\$SHA
+
+              echo '=== Step 7: Deploy Node Exporter ==='
+              sudo docker stop theepicbook-node-exporter 2>/dev/null || true
+              sudo docker rm   theepicbook-node-exporter 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-node-exporter \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 9100:9100 \
+                prom/node-exporter:latest
+
+              echo '=== Step 8: Deploy cAdvisor ==='
+              sudo docker stop theepicbook-cadvisor 2>/dev/null || true
+              sudo docker rm   theepicbook-cadvisor 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-cadvisor \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 8081:8080 \
+                -v /:/rootfs:ro \
+                -v /var/run:/var/run:ro \
+                -v /sys:/sys:ro \
+                -v /var/lib/docker/:/var/lib/docker:ro \
+                gcr.io/cadvisor/cadvisor:latest
+
+              echo '=== Step 9: Deploy Prometheus ==='
+              sudo docker volume create prometheus_data 2>/dev/null || true
+              sudo docker stop theepicbook-prometheus 2>/dev/null || true
+              sudo docker rm   theepicbook-prometheus 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-prometheus \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 9090:9090 \
+                -v prometheus_data:/prometheus \
+                -v \$REPO/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+                -v \$REPO/monitoring/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro \
+                prom/prometheus:latest
+
+              echo '=== Step 10: Deploy Alertmanager ==='
+              sudo docker stop theepicbook-alertmanager 2>/dev/null || true
+              sudo docker rm   theepicbook-alertmanager 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-alertmanager \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 9093:9093 \
+                --env-file \$REPO/gitops/staging/.env \
+                -v \$REPO/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro \
+                prom/alertmanager:latest
+
+              echo '=== Step 11: Deploy Grafana ==='
+              sudo docker volume create grafana_data 2>/dev/null || true
+              sudo docker stop theepicbook-grafana 2>/dev/null || true
+              sudo docker rm   theepicbook-grafana 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-grafana \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 3000:3000 \
+                -e GF_SECURITY_ADMIN_PASSWORD=\${GRAFANA_ADMIN_PASS} \
+                -v grafana_data:/var/lib/grafana \
+                -v \$REPO/monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro \
+                -v \$REPO/monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro \
+                -v \$REPO/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro \
+                grafana/grafana:latest
+
+              echo '=== Deployment complete ==='
+            "
+
+      - name: Verify deployment
+        run: |
+          gcloud compute ssh staging-app-vm \
+            --zone=us-central1-a \
+            --project=${{ env.PROJECT_ID }} \
+            --tunnel-through-iap \
+            --command="
+              echo '=== Running containers ==='
+              sudo docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+            "
+
+  # ── JOB 5: Deploy to Production VM ───────────────────────────────
+  # Requires a GitHub 'production' environment with required reviewers
+  # configured in: Settings → Environments → production
+  deploy-prod:
+    name: Deploy — Production
+    runs-on: ubuntu-latest
+    needs: check-ci
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod' }}
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account:            ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy via IAP SSH
+        run: |
+          gcloud compute ssh prod-app-vm \
+            --zone=us-central1-a \
+            --project=${{ env.PROJECT_ID }} \
+            --tunnel-through-iap \
+            --command="
+              set -e
+              REPO=/mnt/stateful_partition/cloudopshub
+              DOCKER_CONFIG=/mnt/stateful_partition/.docker
+              PROJECT=${{ env.PROJECT_ID }}
+              ENV=prod
+              SHA=${{ github.event.inputs.image_tag || 'latest' }}
+
+              echo '=== Step 1: Clone or pull latest code ==='
+              sudo mkdir -p \$REPO
+              sudo chown -R \$(whoami):\$(whoami) \$REPO
+              if [ -d \$REPO/.git ]; then
+                git -C \$REPO pull origin main
+              else
+                git clone https://github.com/glare247/theepicbook.git \$REPO
+              fi
+
+              echo '=== Step 1b: Fetch secrets from Secret Manager ==='
+              TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' \
+                'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+                | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
+
+              fetch_secret() {
+                curl -sf -H \"Authorization: Bearer \$TOKEN\" \
+                  \"https://secretmanager.googleapis.com/v1/projects/\$PROJECT/secrets/\${1}/versions/latest:access\" \
+                  | grep -o '\"data\":\"[^\"]*\"' | cut -d'\"' -f4 | base64 -d
+              }
+
+              DB_HOST=\$(fetch_secret \"\${ENV}-db-host\")
+              DB_PASSWORD=\$(fetch_secret \"\${ENV}-db-password\")
+              GRAFANA_ADMIN_PASS=\$(fetch_secret \"\${ENV}-grafana-admin-password\" || echo 'changeme')
+              SLACK_WEBHOOK_URL=\$(fetch_secret \"\${ENV}-slack-webhook-url\" || echo '')
+              ALERTMANAGER_EMAIL_TO=\$(fetch_secret \"\${ENV}-alert-email-to\" || echo '')
+              ALERTMANAGER_EMAIL_FROM=\$(fetch_secret \"\${ENV}-alert-email-from\" || echo 'alerts@cloudopshub.com')
+              ALERTMANAGER_SMTP_HOST=\$(fetch_secret \"\${ENV}-alert-smtp-host\" || echo 'smtp.gmail.com:587')
+              ALERTMANAGER_SMTP_USER=\$(fetch_secret \"\${ENV}-alert-smtp-user\" || echo '')
+              ALERTMANAGER_SMTP_PASS=\$(fetch_secret \"\${ENV}-alert-smtp-pass\" || echo '')
+
+              {
+                echo \"DB_HOST=\${DB_HOST}\"
+                echo \"DB_USER=appuser\"
+                echo \"DB_PASSWORD=\${DB_PASSWORD}\"
+                echo \"DB_NAME=bookstore\"
+                echo \"SLACK_WEBHOOK_URL=\${SLACK_WEBHOOK_URL}\"
+                echo \"ALERTMANAGER_EMAIL_TO=\${ALERTMANAGER_EMAIL_TO}\"
+                echo \"ALERTMANAGER_EMAIL_FROM=\${ALERTMANAGER_EMAIL_FROM}\"
+                echo \"ALERTMANAGER_SMTP_HOST=\${ALERTMANAGER_SMTP_HOST}\"
+                echo \"ALERTMANAGER_SMTP_USER=\${ALERTMANAGER_SMTP_USER}\"
+                echo \"ALERTMANAGER_SMTP_PASS=\${ALERTMANAGER_SMTP_PASS}\"
+              } > \$REPO/gitops/prod/.env
+              chmod 600 \$REPO/gitops/prod/.env
+
+              echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
+              sudo mkdir -p \$DOCKER_CONFIG
+              AR_TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' \
+                'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+                | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
+              echo \$AR_TOKEN | sudo docker --config \$DOCKER_CONFIG login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
+
+              REGISTRY=us-central1-docker.pkg.dev/\$PROJECT/${{ env.REPOSITORY_ID }}
+
+              echo '=== Step 3: Pull images ==='
+              sudo docker --config \$DOCKER_CONFIG pull \$REGISTRY/${{ env.BACKEND_IMAGE }}:\$SHA
+              sudo docker --config \$DOCKER_CONFIG pull \$REGISTRY/${{ env.FRONTEND_IMAGE }}:\$SHA
+
+              echo '=== Step 4: Ensure network exists ==='
+              sudo docker network inspect theepicbook-network >/dev/null 2>&1 || \
+                sudo docker network create theepicbook-network
+
+              echo '=== Step 5: Deploy app ==='
+              sudo docker stop theepicbook-app 2>/dev/null || true
+              sudo docker rm   theepicbook-app 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-app \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                --env-file \$REPO/gitops/prod/.env \
+                -e PORT=8080 \
+                -e NODE_ENV=production \
+                --log-driver gcplogs \
+                --log-opt gcp-log-cmd=true \
+                \$REGISTRY/${{ env.BACKEND_IMAGE }}:\$SHA
+
+              echo '=== Step 6: Deploy nginx ==='
+              sudo docker stop theepicbook-nginx 2>/dev/null || true
+              sudo docker rm   theepicbook-nginx 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-nginx \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 80:80 \
+                --log-driver gcplogs \
+                --log-opt gcp-log-cmd=true \
+                \$REGISTRY/${{ env.FRONTEND_IMAGE }}:\$SHA
+
+              echo '=== Step 7: Deploy Node Exporter ==='
+              sudo docker stop theepicbook-node-exporter 2>/dev/null || true
+              sudo docker rm   theepicbook-node-exporter 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-node-exporter \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 9100:9100 \
+                prom/node-exporter:latest
+
+              echo '=== Step 8: Deploy cAdvisor ==='
+              sudo docker stop theepicbook-cadvisor 2>/dev/null || true
+              sudo docker rm   theepicbook-cadvisor 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-cadvisor \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 8081:8080 \
+                -v /:/rootfs:ro \
+                -v /var/run:/var/run:ro \
+                -v /sys:/sys:ro \
+                -v /var/lib/docker/:/var/lib/docker:ro \
+                gcr.io/cadvisor/cadvisor:latest
+
+              echo '=== Step 9: Deploy Prometheus ==='
+              sudo docker volume create prometheus_data 2>/dev/null || true
+              sudo docker stop theepicbook-prometheus 2>/dev/null || true
+              sudo docker rm   theepicbook-prometheus 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-prometheus \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 9090:9090 \
+                -v prometheus_data:/prometheus \
+                -v \$REPO/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+                -v \$REPO/monitoring/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro \
+                prom/prometheus:latest
+
+              echo '=== Step 10: Deploy Alertmanager ==='
+              sudo docker stop theepicbook-alertmanager 2>/dev/null || true
+              sudo docker rm   theepicbook-alertmanager 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-alertmanager \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 9093:9093 \
+                --env-file \$REPO/gitops/prod/.env \
+                -v \$REPO/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro \
+                prom/alertmanager:latest
+
+              echo '=== Step 11: Deploy Grafana ==='
+              sudo docker volume create grafana_data 2>/dev/null || true
+              sudo docker stop theepicbook-grafana 2>/dev/null || true
+              sudo docker rm   theepicbook-grafana 2>/dev/null || true
+              sudo docker run -d \
+                --name theepicbook-grafana \
+                --restart unless-stopped \
+                --network theepicbook-network \
+                -p 3000:3000 \
+                -e GF_SECURITY_ADMIN_PASSWORD=\${GRAFANA_ADMIN_PASS} \
+                -v grafana_data:/var/lib/grafana \
+                -v \$REPO/monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro \
+                -v \$REPO/monitoring/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro \
+                -v \$REPO/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro \
+                grafana/grafana:latest
+
+              echo '=== Deployment complete ==='
+            "
+
+      - name: Verify deployment
+        run: |
+          gcloud compute ssh prod-app-vm \
+            --zone=us-central1-a \
+            --project=${{ env.PROJECT_ID }} \
+            --tunnel-through-iap \
+            --command="
+              echo '=== Running containers ==='
+              sudo docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
             "
