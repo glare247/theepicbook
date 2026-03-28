@@ -20,8 +20,10 @@
 name: CD Pipeline
 
 on:
-  # Deployment is now handled by the deploy job in ci.yml.
-  # This workflow is kept for manual re-deploys only.
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -241,7 +243,6 @@ jobs:
             --project=${{ env.PROJECT_ID }} \
             --tunnel-through-iap \
             --command="
-              export PATH=/var/bin:\$PATH
               echo '=== Running containers ==='
-              docker ps --filter name=theepicbook --format 'table {{.Names}}\t{{.Status}}'
+              sudo docker ps --filter name=theepicbook --format 'table {{.Names}}\t{{.Status}}'
             "
