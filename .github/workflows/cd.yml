@@ -20,14 +20,8 @@
 name: CD Pipeline
 
 on:
-  # Runs after CI pipeline completes successfully
-  workflow_run:
-    workflows: ["CI Pipeline"]
-    types:
-      - completed
-    branches:
-      - main
-  # Allows manual trigger from GitHub Actions UI
+  # Deployment is now handled by the deploy job in ci.yml.
+  # This workflow is kept for manual re-deploys only.
   workflow_dispatch:
 
 env:
@@ -97,7 +91,7 @@ jobs:
           git config user.name  "GitHub Actions"
           git add gitops/dev/docker-compose.yml
           git diff --staged --quiet || \
-            git commit -m "cd: update dev image tags to ${{ steps.sha.outputs.sha }}"
+            git commit -m "cd: update dev image tags to ${{ steps.sha.outputs.sha }} [skip ci]"
           git push
 
   # ── JOB 3: Deploy to Dev VM ─────────────────────────────────────
@@ -194,21 +188,26 @@ jobs:
               chmod 600 \$REPO/gitops/dev/.env
 
               echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
-              /usr/share/google/dockercfg_update.sh
+              AR_TOKEN=\$(curl -sf -H 'Metadata-Flavor: Google' \
+                'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+                | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+              echo "\$AR_TOKEN" | sudo docker login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
 
               echo '=== Step 3: Pull new images ==='
               sudo docker run --rm \
                 -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /root/.docker:/root/.docker:ro \
                 -v \$REPO:\$REPO \
-                -w \$REPO \
+                -w \$REPO/gitops/dev \
                 \$COMPOSE_IMAGE \
                 -f \$REPO/gitops/dev/docker-compose.yml pull
 
               echo '=== Step 4: Restart containers ==='
               sudo docker run --rm \
                 -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /root/.docker:/root/.docker:ro \
                 -v \$REPO:\$REPO \
-                -w \$REPO \
+                -w \$REPO/gitops/dev \
                 \$COMPOSE_IMAGE \
                 -f \$REPO/gitops/dev/docker-compose.yml up -d
 
