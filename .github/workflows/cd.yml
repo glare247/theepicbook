@@ -151,7 +151,7 @@ jobs:
               fi
 
               echo '=== Step 2: Authenticate Docker to Artifact Registry ==='
-              gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+              /usr/share/google/dockercfg_update.sh
 
               echo '=== Step 3: Pull new images ==='
               docker-compose -f \$REPO/gitops/dev/docker-compose.yml pull
