@@ -27,6 +27,8 @@ on:
       - completed
     branches:
       - main
+  # Allows manual trigger from GitHub Actions UI
+  workflow_dispatch:
 
 env:
   PROJECT_ID:    expandox-project-2
@@ -45,7 +47,7 @@ jobs:
   check-ci:
     name: Check CI Status
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: CI passed — proceeding with CD
         run: echo "CI pipeline passed — starting CD pipeline"
