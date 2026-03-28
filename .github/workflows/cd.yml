@@ -215,7 +215,7 @@ jobs:
                 -e PORT=8080 \
                 -e NODE_ENV=production \
                 --log-driver gcplogs \
-                --log-opt tag=theepicbook-app \
+                --log-opt gcp-log-cmd=true \
                 \$REGISTRY/${{ env.BACKEND_IMAGE }}:\$SHA
 
               echo '=== Step 6: Deploy nginx ==='
@@ -227,7 +227,7 @@ jobs:
                 --network theepicbook-network \
                 -p 80:80 \
                 --log-driver gcplogs \
-                --log-opt tag=theepicbook-nginx \
+                --log-opt gcp-log-cmd=true \
                 \$REGISTRY/${{ env.FRONTEND_IMAGE }}:\$SHA
 
               echo '=== Deployment complete ==='
