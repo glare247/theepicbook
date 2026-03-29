@@ -169,7 +169,7 @@ resource "google_compute_firewall" "allow_monitoring" {
     ports = ["9090", "9093", "9100", "3000"]
   }
 
-  # Internal only — subnet traffic only
-  source_ranges = [var.subnet_cidr]
-  description   = "Allow monitoring stack ports - internal traffic only"
+  # Subnet-internal traffic + Google IAP range (for IAP TCP tunneling to monitoring UIs)
+  source_ranges = [var.subnet_cidr, "35.235.240.0/20"]
+  description   = "Allow monitoring stack ports - internal and IAP tunnel traffic"
 }
