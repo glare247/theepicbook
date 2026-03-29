@@ -213,6 +213,7 @@ jobs:
                 --name theepicbook-app \
                 --restart unless-stopped \
                 --network theepicbook-network \
+                --network-alias app \
                 --env-file \$REPO/gitops/dev/.env \
                 -e PORT=8080 \
                 -e NODE_ENV=production \
@@ -421,6 +422,7 @@ jobs:
                 --name theepicbook-app \
                 --restart unless-stopped \
                 --network theepicbook-network \
+                --network-alias app \
                 --env-file \$REPO/gitops/staging/.env \
                 -e PORT=8080 \
                 -e NODE_ENV=production \
@@ -632,6 +634,7 @@ jobs:
                 --name theepicbook-app \
                 --restart unless-stopped \
                 --network theepicbook-network \
+                --network-alias app \
                 --env-file \$REPO/gitops/prod/.env \
                 -e PORT=8080 \
                 -e NODE_ENV=production \
