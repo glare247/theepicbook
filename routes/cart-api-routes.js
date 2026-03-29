@@ -5,7 +5,7 @@ module.exports = function (app) {
   app.post("/api/cart", async function (req, res) {
     const book = await db.Book.findByPk(req.body.bookId);
     if (!book) {
-    // TODO: respond error
+      return res.status(404).json({ error: "Book not found" });
     }
 
     const cart = await db.Cart.create({
