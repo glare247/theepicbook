@@ -26,6 +26,11 @@ output "portainer_admin_password_secret_id" {
   value       = google_secret_manager_secret.portainer_admin_password.secret_id
 }
 
+output "grafana_admin_password_secret_id" {
+  description = "Secret Manager secret ID for Grafana admin password"
+  value       = google_secret_manager_secret.grafana_admin_password.secret_id
+}
+
 output "slack_webhook_url_secret_id" {
   description = "Secret Manager secret ID for Slack webhook URL"
   value       = google_secret_manager_secret.slack_webhook_url.secret_id

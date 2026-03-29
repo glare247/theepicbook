@@ -134,6 +134,30 @@ resource "google_secret_manager_secret" "portainer_admin_password" {
   labels = var.labels
 }
 
+# ── 3b. Secret Manager — Grafana admin password ──────────────────
+# Read by CD pipeline at deploy time; injected as GF_SECURITY_ADMIN_PASSWORD
+resource "random_password" "grafana_admin_password" {
+  length           = 24
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}:?"
+}
+
+resource "google_secret_manager_secret" "grafana_admin_password" {
+  secret_id = "${var.env}-grafana-admin-password"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+
+  labels = var.labels
+}
+
+resource "google_secret_manager_secret_version" "grafana_admin_password" {
+  secret      = google_secret_manager_secret.grafana_admin_password.id
+  secret_data = random_password.grafana_admin_password.result
+}
+
 # ── 4. Secret Manager — DB credentials ───────────────────────────
 # Written by Cloud SQL module; read by VM startup script
 resource "google_secret_manager_secret" "db_host" {
