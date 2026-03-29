@@ -159,3 +159,14 @@ resource "google_service_account_iam_member" "github_actions_token_creator" {
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_pool.name}/attribute.repository/${var.github_repo}"
 }
+
+# ── 14. IAM — GitHub Actions SA can read/write Terraform state ────
+# Terraform GCS backend requires storage.objects.list/get/create on
+# the state bucket. Without this, terraform init fails with 403.
+# NOTE: This is a bootstrap permission — must also be granted manually
+# the first time (before Terraform can run to apply this resource).
+resource "google_storage_bucket_iam_member" "github_actions_sa_state_bucket" {
+  bucket = var.tf_state_bucket
+  role   = "roles/storage.admin"
+  member = "serviceAccount:${google_service_account.github_actions_sa.email}"
+}

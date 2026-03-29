@@ -23,3 +23,8 @@ variable "github_repo" {
   description = "GitHub repository in format owner/repo-name e.g. kabir/theepicbook"
   type        = string
 }
+
+variable "tf_state_bucket" {
+  description = "GCS bucket name used for Terraform state — GitHub Actions SA needs storage.admin to init/plan/apply"
+  type        = string
+}

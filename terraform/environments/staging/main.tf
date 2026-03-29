@@ -40,10 +40,11 @@ provider "google" {
 # Must run first — other modules need its outputs
 # Docs: https://cloud.google.com/iam/docs/service-accounts
 module "serviceaccounts" {
-  source      = "../../modules/serviceaccounts"
-  env         = var.env
-  project_id  = var.project_id
-  github_repo = var.github_repo
+  source          = "../../modules/serviceaccounts"
+  env             = var.env
+  project_id      = var.project_id
+  github_repo     = var.github_repo
+  tf_state_bucket = "cloudopshub-terraform-state"
 }
 
 # ── MODULE 2: VPC ─────────────────────────────────────────────────
