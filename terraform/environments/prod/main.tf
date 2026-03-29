@@ -168,3 +168,15 @@ module "loadbalancer" {
   # ↓ Output from security module
   waf_policy_id = module.security.waf_policy_id
 }
+
+# ── CROSS-REPO IAM: prod VM can pull from dev (cloudopshub) repo ──
+# CI pushes images to cloudopshub (dev repo). Prod VM must be able
+# to pull from there. Per-env repo (cloudopshub-prod) is for future
+# image promotion workflows.
+resource "google_artifact_registry_repository_iam_member" "prod_vm_pull_dev_repo" {
+  project    = var.project_id
+  location   = var.region
+  repository = "cloudopshub"
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${module.serviceaccounts.vm_sa_email}"
+}
