@@ -27,7 +27,7 @@ services:
   # from Cloud SQL private IP and Secret Manager credentials.
   # Image tag updated by CI pipeline on every push.
   app:
-    image: us-central1-docker.pkg.dev/expandox-project-2/cloudopshub/theepicbook-backend:199577d497fe83e419da107570d62bdca7293d74
+    image: us-central1-docker.pkg.dev/expandox-project-2/cloudopshub/theepicbook-backend:03fe6798b34f50a639648cba25c6a98dd754fd6a
     container_name: theepicbook-app
     restart: unless-stopped
     env_file:
@@ -55,7 +55,7 @@ services:
 
   # ── Nginx Reverse Proxy ─────────────────────────────────────────
   nginx:
-    image: us-central1-docker.pkg.dev/expandox-project-2/cloudopshub/theepicbook-frontend:199577d497fe83e419da107570d62bdca7293d74
+    image: us-central1-docker.pkg.dev/expandox-project-2/cloudopshub/theepicbook-frontend:03fe6798b34f50a639648cba25c6a98dd754fd6a
     container_name: theepicbook-nginx
     restart: unless-stopped
     logging:
