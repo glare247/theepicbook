@@ -94,7 +94,7 @@ resource "google_project_iam_member" "github_actions_sa_iap_tunnel" {
 # Docs: https://cloud.google.com/compute/docs/oslogin
 resource "google_project_iam_member" "github_actions_sa_os_login" {
   project = var.project_id
-  role    = "roles/compute.osLogin"
+  role    = "roles/compute.osAdminLogin"
   member  = "serviceAccount:${google_service_account.github_actions_sa.email}"
 }
 
