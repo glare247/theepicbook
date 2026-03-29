@@ -149,3 +149,13 @@ resource "google_service_account_iam_member" "github_actions_wif" {
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_pool.name}/attribute.repository/${var.github_repo}"
 }
+
+# ── 13. Allow WIF principal to call generateAccessToken for the SA ─
+# roles/iam.workloadIdentityUser grants actAs but NOT getAccessToken.
+# auth@v2 with token_format=access_token calls generateAccessToken
+# which requires serviceAccountTokenCreator on the SA.
+resource "google_service_account_iam_member" "github_actions_token_creator" {
+  service_account_id = google_service_account.github_actions_sa.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_pool.name}/attribute.repository/${var.github_repo}"
+}
