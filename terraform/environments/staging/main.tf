@@ -169,6 +169,22 @@ module "loadbalancer" {
   waf_policy_id = module.security.waf_policy_id
 }
 
+# ── Shared WIF pool: grant dev WIF principal access to staging SA ────
+# All environments share the single dev WIF pool. The SA is the security
+# boundary. Grant the dev WIF principalSet both roles needed for
+# auth@v2 service account impersonation.
+resource "google_service_account_iam_member" "staging_sa_wif_from_dev_pool" {
+  service_account_id = module.serviceaccounts.github_actions_sa_name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/projects/501265171917/locations/global/workloadIdentityPools/dev-github-pool-975dd5ed/attribute.repository/glare247/theepicbook"
+}
+
+resource "google_service_account_iam_member" "staging_sa_token_creator_from_dev_pool" {
+  service_account_id = module.serviceaccounts.github_actions_sa_name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "principalSet://iam.googleapis.com/projects/501265171917/locations/global/workloadIdentityPools/dev-github-pool-975dd5ed/attribute.repository/glare247/theepicbook"
+}
+
 # ── CROSS-REPO IAM: staging VM can pull from dev (cloudopshub) repo ──
 # CI pushes images to cloudopshub (dev repo). Staging VM must be able
 # to pull from there. Per-env repo (cloudopshub-staging) is for future
